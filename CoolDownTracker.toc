@@ -1,0 +1,8 @@
+## Interface: 11200
+## Title: CoolDownTracker
+## Notes: Tracks raid cooldowns - C.Shout, C.Roar, LoH, HoP, Spirit Link, Innervate, Reincarnation, Soulstone, Rebirth
+## Author: You
+## Version: 3.0
+## SavedVariables: CDT_DB
+
+CoolDownTracker.lua
