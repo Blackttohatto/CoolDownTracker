@@ -31,10 +31,6 @@ CDT_SUMM_NM_ROWS  = 3
 -- FIX 1: increased from 100 to 140 so second icon-row name strings don't overflow the background
 CDT_SUMM_BODY_H   = 140
 
--- PullCheck panel
-PC_HDR_H  = 13   -- height of the pullcheck header bar
-PC_BODY_H = 13   -- height of a single prompt row
-PC_RANGE  = 40   -- yard threshold for in-range check
 
 -- ── Spell definitions ─────────────────────────────────────────────────────────
 CDT_SPELL_DEFS = {
@@ -135,59 +131,6 @@ CDT_IDS[9862]  = _kd["tranquility"]
 CDT_IDS[9863]  = _kd["tranquility"]
 _kd = nil
 
--- ── PullCheck healer-detection spell IDs ─────────────────────────────────────
-PC_HEAL_IDS = {}
--- Flash Heal (Priest) ranks 1-9
-PC_HEAL_IDS[2061]  = true
-PC_HEAL_IDS[9472]  = true
-PC_HEAL_IDS[9473]  = true
-PC_HEAL_IDS[9474]  = true
-PC_HEAL_IDS[10915] = true
-PC_HEAL_IDS[10916] = true
-PC_HEAL_IDS[10917] = true
-PC_HEAL_IDS[25233] = true
-PC_HEAL_IDS[25235] = true
--- Chain Heal (Shaman) ranks 1-4
-PC_HEAL_IDS[1064]  = true
-PC_HEAL_IDS[10622] = true
-PC_HEAL_IDS[10623] = true
-PC_HEAL_IDS[25422] = true
--- Rejuvenation (Druid) ranks 1-10
-PC_HEAL_IDS[774]   = true
-PC_HEAL_IDS[1058]  = true
-PC_HEAL_IDS[1430]  = true
-PC_HEAL_IDS[2090]  = true
-PC_HEAL_IDS[2091]  = true
-PC_HEAL_IDS[3627]  = true
-PC_HEAL_IDS[8910]  = true
-PC_HEAL_IDS[9839]  = true
-PC_HEAL_IDS[9840]  = true
-PC_HEAL_IDS[25299] = true
--- Regrowth (Druid) ranks 1-9
-PC_HEAL_IDS[8936]  = true
-PC_HEAL_IDS[8938]  = true
-PC_HEAL_IDS[8939]  = true
-PC_HEAL_IDS[8940]  = true
-PC_HEAL_IDS[8941]  = true
-PC_HEAL_IDS[9750]  = true
-PC_HEAL_IDS[9856]  = true
-PC_HEAL_IDS[9857]  = true
-PC_HEAL_IDS[9858]  = true
--- Healing Touch (Druid) ranks 1-11
-PC_HEAL_IDS[5185]  = true
-PC_HEAL_IDS[5186]  = true
-PC_HEAL_IDS[5187]  = true
-PC_HEAL_IDS[5188]  = true
-PC_HEAL_IDS[5189]  = true
-PC_HEAL_IDS[6778]  = true
-PC_HEAL_IDS[8903]  = true
-PC_HEAL_IDS[9758]  = true
-PC_HEAL_IDS[9888]  = true
-PC_HEAL_IDS[9889]  = true
-PC_HEAL_IDS[25297] = true
--- Daybreak (Paladin proc)
-PC_HEAL_IDS[28562] = true
-PC_HEAL_IDS[28563] = true
 
 -- Config option tables
 CDT_SHOW_OPTS  = { "always", "raid", "mouseover" }
@@ -234,8 +177,6 @@ function CDT_InitDB()
     if CDT_DB.readyMode   == nil then CDT_DB.readyMode   = "on"     end
     if CDT_DB.barDir      == nil then CDT_DB.barDir      = "H"      end
     if CDT_DB.spells      == nil then CDT_DB.spells      = {}       end
-    if CDT_DB.pullcheck   == nil then CDT_DB.pullcheck   = false    end
-    if CDT_DB.manaThresh  == nil then CDT_DB.manaThresh  = 50       end
     local n = _getn(CDT_SPELL_DEFS)
     for i = 1, n do
         local d = CDT_SPELL_DEFS[i]
@@ -423,34 +364,6 @@ CDT_MAX_ROWS_PER_SPELL = 8
 CDT_SUMM_COLS  = {}
 CDT_SUMM_CACHE = {}
 
--- ── PullCheck state ───────────────────────────────────────────────────────────
-PC_FRAME         = nil
-PC_HDR_TXT       = nil
-PC_PROMPT_ROWS   = {}
-PC_MAX_PROMPTS   = 8
-
-PC_HEALERS       = {}
-PC_HEALER_COUNT  = 0
-
-PC_DETECT_COUNTS = {}
-PC_PENDING       = {}
-PC_PENDING_N     = 0
-PC_IN_COMBAT     = false
-PC_FIGHTS_SINCE_DETECT = 0
-PC_SCANNING      = true
-PC_MAX_FIGHTS    = 5
-
-PC_H_IN    = 0
-PC_H_TOT   = 0
-PC_M_IN    = 0
-PC_P_IN    = 0
-PC_P_TOT   = 0
-
-PC_MO_FRAME      = nil
-PC_MO_ROWS       = {}
-PC_MO_MAX        = 20
-
-PC_CLR_FRAME     = nil
 
 -- ── Mode flag sync ────────────────────────────────────────────────────────────
 function CDT_SyncModeFlags()
@@ -629,7 +542,6 @@ function CDT_UpdateVisibility()
         if CDT_DB.shown then CDT_FRAME:Show() else CDT_FRAME:Hide() end
         CDT_SetBodyVisible(true)
     end
-    PC_UpdateVisibility()
 end
 
 function CDT_MO_PinExpand()
@@ -919,446 +831,6 @@ function CDT_SummRedraw(now)
     end
 end
 
--- ── PullCheck: polling ────────────────────────────────────────────────────────
-
-function PC_Poll()
-    if not CDT_DB.pullcheck then return end
-    local n = GetNumRaidMembers()
-    if not n or n == 0 then
-        PC_H_IN = 0; PC_H_TOT = 0; PC_M_IN = 0; PC_P_IN = 0; PC_P_TOT = 0
-        PC_DrawHeader()
-        return
-    end
-
-    local px, py, pz = UnitPosition("player")
-
-    local thresh   = CDT_DB.manaThresh / 100
-    local units    = CDT_RAID_UNITS
-    local range    = PC_RANGE * PC_RANGE
-    local hIn = 0; local hTot = 0; local mIn = 0; local pIn = 0
-
-    for i = 1, n do
-        local unit   = units[i]
-        local exists = UnitExists(unit)
-        if exists then
-            local name = UnitName(unit)
-            local inRange = false
-            if px then
-                local ux, uy, uz = UnitPosition(unit)
-                if ux then
-                    local dx = ux - px
-                    local dy = uy - py
-                    local dz = uz - pz
-                    if (dx*dx + dy*dy + dz*dz) <= range then
-                        inRange = true
-                    end
-                end
-            end
-
-            if inRange then pIn = pIn + 1 end
-
-            if name and PC_HEALERS[name] then
-                hTot = hTot + 1
-                if inRange then
-                    hIn = hIn + 1
-                    local mana    = UnitMana(unit)
-                    local manaMax = UnitManaMax(unit)
-                    if manaMax and manaMax > 0 then
-                        if (mana / manaMax) >= thresh then
-                            mIn = mIn + 1
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    PC_P_TOT = n
-    PC_H_IN  = hIn
-    PC_H_TOT = hTot
-    PC_M_IN  = mIn
-    PC_P_IN  = pIn
-
-    PC_DrawHeader()
-end
-
--- ── PullCheck: header redraw ──────────────────────────────────────────────────
-
-PC_LAST_HDR = ""
-
-function PC_DrawHeader()
-    if not PC_HDR_TXT then return end
-    local s = "H:" .. PC_H_IN .. "/" .. PC_H_TOT
-           .. "  M:" .. PC_M_IN .. "/" .. PC_H_IN
-           .. "  P:" .. PC_P_IN .. "/" .. PC_P_TOT
-    if s ~= PC_LAST_HDR then
-        PC_LAST_HDR = s
-        PC_HDR_TXT:SetText(s)
-    end
-end
-
--- ── PullCheck: healer detection ───────────────────────────────────────────────
-
-function PC_OnCombatStart()
-    PC_IN_COMBAT = true
-    for k in pairs(PC_DETECT_COUNTS) do PC_DETECT_COUNTS[k] = nil end
-end
-
-function PC_OnCombatEnd()
-    PC_IN_COMBAT = false
-    local found = false
-    for name, count in pairs(PC_DETECT_COUNTS) do
-        if count >= 3 and not PC_HEALERS[name] then
-            local alreadyPending = false
-            for i = 1, PC_PENDING_N do
-                if PC_PENDING[i] == name then
-                    alreadyPending = true
-                    break
-                end
-            end
-            if not alreadyPending then
-                PC_PENDING_N = PC_PENDING_N + 1
-                PC_PENDING[PC_PENDING_N] = name
-                found = true
-            end
-        end
-    end
-
-    if found then
-        PC_FIGHTS_SINCE_DETECT = 0
-        PC_DrawPrompts()
-    else
-        PC_FIGHTS_SINCE_DETECT = PC_FIGHTS_SINCE_DETECT + 1
-        if PC_FIGHTS_SINCE_DETECT >= PC_MAX_FIGHTS then
-            PC_SCANNING = false
-        end
-    end
-
-    PC_Poll()
-end
-
-function PC_RecordHealCast(name)
-    if not PC_SCANNING then return end
-    if not PC_IN_COMBAT then return end
-    if PC_HEALERS[name] then return end
-    local c = PC_DETECT_COUNTS[name]
-    if c then
-        PC_DETECT_COUNTS[name] = c + 1
-    else
-        PC_DETECT_COUNTS[name] = 1
-    end
-end
-
--- ── PullCheck: prompt rows ────────────────────────────────────────────────────
-
-function PC_DrawPrompts()
-    if not PC_FRAME then return end
-    for i = 1, PC_MAX_PROMPTS do
-        local row = PC_PROMPT_ROWS[i]
-        if i <= PC_PENDING_N then
-            row.lbl:SetText(PC_PENDING[i])
-            row:Show()
-        else
-            row:Hide()
-        end
-    end
-    PC_ResizeFrame()
-end
-
-function PC_ConfirmHealer(name)
-    PC_HEALERS[name] = true
-    PC_HEALER_COUNT  = PC_HEALER_COUNT + 1
-    PC_RemovePending(name)
-    PC_Poll()
-end
-
-function PC_RejectHealer(name)
-    PC_RemovePending(name)
-end
-
-function PC_RemovePending(name)
-    local found = false
-    for i = 1, PC_PENDING_N do
-        if PC_PENDING[i] == name then
-            found = true
-        end
-        if found and i < PC_PENDING_N then
-            PC_PENDING[i] = PC_PENDING[i + 1]
-        end
-    end
-    if found then
-        PC_PENDING[PC_PENDING_N] = nil
-        PC_PENDING_N = PC_PENDING_N - 1
-        PC_DrawPrompts()
-    end
-end
-
-function PC_ClearHealers()
-    for k in pairs(PC_HEALERS) do PC_HEALERS[k] = nil end
-    PC_HEALER_COUNT = 0
-    PC_Poll()
-end
-
--- ── PullCheck: frame sizing ───────────────────────────────────────────────────
-
-function PC_ResizeFrame()
-    if not PC_FRAME then return end
-    local h = PC_HDR_H + PC_PENDING_N * PC_BODY_H
-    if h < PC_HDR_H then h = PC_HDR_H end
-    PC_FRAME:SetHeight(h)
-end
-
-function PC_UpdateVisibility()
-    if not PC_FRAME then return end
-    if CDT_DB.pullcheck then
-        PC_FRAME:Show()
-    else
-        PC_FRAME:Hide()
-    end
-end
-
--- ── PullCheck: mouseover tooltip ─────────────────────────────────────────────
-
-function PC_ShowMO()
-    if not PC_MO_FRAME then return end
-    if PC_HEALER_COUNT == 0 then PC_MO_FRAME:Hide(); return end
-
-    local px, py, pz = UnitPosition("player")
-    local range      = PC_RANGE * PC_RANGE
-    local thresh     = CDT_DB.manaThresh / 100
-    local units      = CDT_RAID_UNITS
-    local n          = GetNumRaidMembers()
-
-    local row = 0
-    for k, _ in pairs(PC_HEALERS) do
-        local inRange = false
-        local manaPct = 0
-        if n and n > 0 then
-            for i = 1, n do
-                local unit = units[i]
-                if UnitExists(unit) and UnitName(unit) == k then
-                    if px then
-                        local ux, uy, uz = UnitPosition(unit)
-                        if ux then
-                            local dx = ux - px
-                            local dy = uy - py
-                            local dz = uz - pz
-                            if (dx*dx + dy*dy + dz*dz) <= range then
-                                inRange = true
-                            end
-                        end
-                    end
-                    local mana    = UnitMana(unit)
-                    local manaMax = UnitManaMax(unit)
-                    if manaMax and manaMax > 0 then
-                        manaPct = _floor((mana / manaMax) * 100)
-                    end
-                    break
-                end
-            end
-        end
-
-        row = row + 1
-        if row <= PC_MO_MAX then
-            local fs   = PC_MO_ROWS[row]
-            local pct  = manaPct .. "%"
-            local txt  = k .. "  " .. pct
-            fs:SetText(txt)
-            if inRange then
-                fs:SetTextColor(1, 0.88, 0.6)
-                fs:SetAlpha(1)
-            else
-                fs:SetTextColor(0.5, 0.44, 0.3)
-                fs:SetAlpha(0.45)
-            end
-            fs:Show()
-        end
-    end
-    for i = row + 1, PC_MO_MAX do PC_MO_ROWS[i]:Hide() end
-
-    local tooltipH = 14 + row * 12 + 4
-    if tooltipH < 20 then tooltipH = 20 end
-    PC_MO_FRAME:SetHeight(tooltipH)
-    PC_MO_FRAME:Show()
-end
-
-function PC_HideMO()
-    if PC_MO_FRAME then PC_MO_FRAME:Hide() end
-end
-
--- ── Build PullCheck UI ────────────────────────────────────────────────────────
-
-function PC_Build()
-    PC_FRAME = CreateFrame("Frame", "PCFrame", UIParent)
-    PC_FRAME:SetWidth(CDT_W)
-    PC_FRAME:SetHeight(PC_HDR_H)
-    PC_FRAME:SetPoint("TOPLEFT", CDT_FRAME, "BOTTOMLEFT", 0, -1)
-    PC_FRAME:EnableMouse(true)
-
-    local pcBg = PC_FRAME:CreateTexture(nil, "BACKGROUND")
-    pcBg:SetAllPoints(PC_FRAME)
-    pcBg:SetTexture(0.03, 0.05, 0.03, 0.88)
-
-    local hdr = CreateFrame("Frame", "PCHdr", PC_FRAME)
-    hdr:SetWidth(CDT_W); hdr:SetHeight(PC_HDR_H)
-    hdr:SetPoint("TOPLEFT", PC_FRAME, "TOPLEFT", 0, 0)
-    local hdrBg = hdr:CreateTexture(nil, "BACKGROUND")
-    hdrBg:SetAllPoints(hdr); hdrBg:SetTexture(0.08, 0.14, 0.08, 0.95)
-
-    local pullLbl = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pullLbl:SetPoint("LEFT", hdr, "LEFT", 4, 0)
-    pullLbl:SetTextColor(0.5, 0.8, 0.5)
-    pullLbl:SetText("Pull")
-
-    PC_HDR_TXT = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    PC_HDR_TXT:SetPoint("LEFT", hdr, "LEFT", 30, 0)
-    PC_HDR_TXT:SetTextColor(0.88, 0.88, 0.7)
-    PC_HDR_TXT:SetText("H:0/0  M:0/0  P:0/0")
-
-    local scanBtn = CreateFrame("Button", "PCScanBtn", hdr)
-    scanBtn:SetWidth(16); scanBtn:SetHeight(11)
-    scanBtn:SetPoint("TOPRIGHT", hdr, "TOPRIGHT", -20, -2)
-    local scanBg = scanBtn:CreateTexture(nil, "BACKGROUND")
-    scanBg:SetAllPoints(scanBtn); scanBg:SetTexture(0.1, 0.3, 0.1, 0.9)
-    local scanTxt = scanBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    scanTxt:SetAllPoints(scanBtn); scanTxt:SetText("[S]"); scanTxt:SetTextColor(0.4, 1, 0.4)
-    scanBtn:SetScript("OnClick", function()
-        PC_SCANNING            = true
-        PC_FIGHTS_SINCE_DETECT = 0
-    end)
-
-    local clrBtn = CreateFrame("Button", "PCClrBtn", hdr)
-    clrBtn:SetWidth(16); clrBtn:SetHeight(11)
-    clrBtn:SetPoint("TOPRIGHT", hdr, "TOPRIGHT", -2, -2)
-    local clrBg = clrBtn:CreateTexture(nil, "BACKGROUND")
-    clrBg:SetAllPoints(clrBtn); clrBg:SetTexture(0.3, 0.1, 0.1, 0.9)
-    local clrTxt = clrBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    clrTxt:SetAllPoints(clrBtn); clrTxt:SetText("[C]"); clrTxt:SetTextColor(1, 0.4, 0.4)
-    clrBtn:SetScript("OnClick", function()
-        if PC_CLR_FRAME:IsVisible() then PC_CLR_FRAME:Hide()
-        else
-            PC_CLR_FRAME:ClearAllPoints()
-            PC_CLR_FRAME:SetPoint("TOP", PC_FRAME, "BOTTOM", 0, -2)
-            PC_CLR_FRAME:Show()
-        end
-    end)
-
-    PC_FRAME:SetScript("OnEnter", function()
-        PC_Poll()
-        PC_ShowMO()
-    end)
-    PC_FRAME:SetScript("OnLeave", function()
-        PC_HideMO()
-    end)
-
-    for i = 1, PC_MAX_PROMPTS do
-        local row = CreateFrame("Frame", "PCPrompt_"..i, PC_FRAME)
-        row:SetWidth(CDT_W); row:SetHeight(PC_BODY_H)
-        row:SetPoint("TOPLEFT", PC_FRAME, "TOPLEFT", 0, -(PC_HDR_H + (i-1)*PC_BODY_H))
-
-        local rowBg = row:CreateTexture(nil, "BACKGROUND")
-        rowBg:SetAllPoints(row); rowBg:SetTexture(0.06, 0.1, 0.06, 0.9)
-
-        local detLbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        detLbl:SetPoint("LEFT", row, "LEFT", 4, 0)
-        detLbl:SetTextColor(0.6, 0.6, 0.6)
-        detLbl:SetText("Healer detected:")
-        detLbl:SetWidth(80); detLbl:SetJustifyH("LEFT")
-
-        local nmLbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        nmLbl:SetPoint("LEFT", row, "LEFT", 86, 0)
-        nmLbl:SetTextColor(1, 0.88, 0.6)
-        nmLbl:SetWidth(80); nmLbl:SetJustifyH("LEFT")
-        row.lbl = nmLbl
-
-        local yBtn = CreateFrame("Button", "PCYBtn_"..i, row)
-        yBtn:SetWidth(16); yBtn:SetHeight(11)
-        yBtn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -20, -1)
-        local yBg = yBtn:CreateTexture(nil, "BACKGROUND")
-        yBg:SetAllPoints(yBtn); yBg:SetTexture(0.1, 0.4, 0.1, 0.9)
-        local yTxt = yBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        yTxt:SetAllPoints(yBtn); yTxt:SetText("Y"); yTxt:SetTextColor(0.3, 1, 0.3)
-        local captureRow = i
-        yBtn:SetScript("OnClick", function()
-            local name = PC_PENDING[captureRow]
-            if name then PC_ConfirmHealer(name) end
-        end)
-
-        local nBtn = CreateFrame("Button", "PCNBtn_"..i, row)
-        nBtn:SetWidth(16); nBtn:SetHeight(11)
-        nBtn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, -1)
-        local nBg = nBtn:CreateTexture(nil, "BACKGROUND")
-        nBg:SetAllPoints(nBtn); nBg:SetTexture(0.4, 0.1, 0.1, 0.9)
-        local nTxt = nBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        nTxt:SetAllPoints(nBtn); nTxt:SetText("N"); nTxt:SetTextColor(1, 0.3, 0.3)
-        nBtn:SetScript("OnClick", function()
-            local name = PC_PENDING[captureRow]
-            if name then PC_RejectHealer(name) end
-        end)
-
-        row:Hide()
-        PC_PROMPT_ROWS[i] = row
-    end
-
-    PC_MO_FRAME = CreateFrame("Frame", "PCMOFrame", UIParent)
-    PC_MO_FRAME:SetWidth(120)
-    PC_MO_FRAME:SetHeight(20)
-    PC_MO_FRAME:SetFrameStrata("TOOLTIP")
-    PC_MO_FRAME:SetPoint("TOPLEFT", PC_FRAME, "TOPRIGHT", 4, 0)
-    PC_MO_FRAME:EnableMouse(false)
-    PC_MO_FRAME:Hide()
-
-    local moBg = PC_MO_FRAME:CreateTexture(nil, "BACKGROUND")
-    moBg:SetAllPoints(PC_MO_FRAME); moBg:SetTexture(0.04, 0.06, 0.04, 0.95)
-
-    local moTitle = PC_MO_FRAME:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    moTitle:SetPoint("TOPLEFT", PC_MO_FRAME, "TOPLEFT", 4, -3)
-    moTitle:SetTextColor(0.5, 0.8, 0.5); moTitle:SetText("Healers")
-
-    for i = 1, PC_MO_MAX do
-        local fs = PC_MO_FRAME:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fs:SetPoint("TOPLEFT", PC_MO_FRAME, "TOPLEFT", 4, -(14 + (i-1)*12))
-        fs:SetWidth(112); fs:SetJustifyH("LEFT")
-        fs:Hide()
-        PC_MO_ROWS[i] = fs
-    end
-
-    PC_CLR_FRAME = CreateFrame("Frame", "PCClrFrame", UIParent)
-    PC_CLR_FRAME:SetWidth(140); PC_CLR_FRAME:SetHeight(44)
-    PC_CLR_FRAME:SetFrameStrata("TOOLTIP"); PC_CLR_FRAME:EnableMouse(true)
-    PC_CLR_FRAME:Hide()
-
-    local clrFBg = PC_CLR_FRAME:CreateTexture(nil, "BACKGROUND")
-    clrFBg:SetAllPoints(PC_CLR_FRAME); clrFBg:SetTexture(0.08, 0.04, 0.04, 0.97)
-    local clrFLbl = PC_CLR_FRAME:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    clrFLbl:SetPoint("TOP", PC_CLR_FRAME, "TOP", 0, -8)
-    clrFLbl:SetTextColor(1, 0.7, 0.7); clrFLbl:SetText("Clear healer list?")
-
-    local cfYBtn = CreateFrame("Button", "PCClrYBtn", PC_CLR_FRAME)
-    cfYBtn:SetWidth(40); cfYBtn:SetHeight(14)
-    cfYBtn:SetPoint("BOTTOMLEFT", PC_CLR_FRAME, "BOTTOMLEFT", 8, 6)
-    local cfYBg = cfYBtn:CreateTexture(nil, "BACKGROUND")
-    cfYBg:SetAllPoints(cfYBtn); cfYBg:SetTexture(0.1, 0.4, 0.1, 0.9)
-    local cfYTxt = cfYBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    cfYTxt:SetAllPoints(cfYBtn); cfYTxt:SetText("Y"); cfYTxt:SetTextColor(0.3, 1, 0.3)
-    cfYBtn:SetScript("OnClick", function()
-        PC_ClearHealers()
-        PC_CLR_FRAME:Hide()
-    end)
-
-    local cfNBtn = CreateFrame("Button", "PCClrNBtn", PC_CLR_FRAME)
-    cfNBtn:SetWidth(40); cfNBtn:SetHeight(14)
-    cfNBtn:SetPoint("BOTTOMRIGHT", PC_CLR_FRAME, "BOTTOMRIGHT", -8, 6)
-    local cfNBg = cfNBtn:CreateTexture(nil, "BACKGROUND")
-    cfNBg:SetAllPoints(cfNBtn); cfNBg:SetTexture(0.3, 0.1, 0.1, 0.9)
-    local cfNTxt = cfNBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    cfNTxt:SetAllPoints(cfNBtn); cfNTxt:SetText("N"); cfNTxt:SetTextColor(1, 0.3, 0.3)
-    cfNBtn:SetScript("OnClick", function() PC_CLR_FRAME:Hide() end)
-
-    PC_UpdateVisibility()
-    PC_DrawHeader()
-end
-
 -- ── Build main UI ─────────────────────────────────────────────────────────────
 
 function CDT_Build()
@@ -1597,10 +1069,8 @@ function CDT_Build()
     -- ── Ticker ──
     local tick    = CreateFrame("Frame", "CDTTick", UIParent)
     local acc     = 0
-    local pcAcc   = 0
     tick:SetScript("OnUpdate", function()
         acc   = acc   + arg1
-        pcAcc = pcAcc + arg1
 
         if acc >= 2 then
             acc = 0
@@ -1613,21 +1083,11 @@ function CDT_Build()
             end
             CDT_Redraw()
         end
-
-        if pcAcc >= 5 then
-            pcAcc = 0
-            if CDT_DB.pullcheck and not PC_IN_COMBAT then
-                if GetNumRaidMembers() > 0 then
-                    PC_Poll()
-                end
-            end
-        end
     end)
 
     CDT_READY = true
     CDT_BuildConfirm()
     CDT_BuildConfig()
-    PC_Build()
     -- FIX 2: apply header layout for current mode (handles vertical strip correctly)
     CDT_ApplyHeaderLayout()
     CDT_UpdateVisibility()
@@ -1691,7 +1151,7 @@ end
 
 function CDT_BuildConfig()
     local spellCount = _getn(CDT_SPELL_DEFS)
-    local cfgH = 230 + spellCount * 14 + 28 + 60
+    local cfgH = 230 + spellCount * 14 + 28
     local f = CreateFrame("Frame", "CDTConfigFrame", UIParent)
     f:SetWidth(210); f:SetHeight(cfgH)
     f:SetPoint("TOPLEFT", CDT_FRAME, "TOPRIGHT", 4, 0)
@@ -1925,55 +1385,6 @@ function CDT_BuildConfig()
     starDisc:SetWidth(194); starDisc:SetJustifyH("LEFT")
     starDisc:SetText("* cooldown may be reduced by talents or set bonuses — timer is approximate")
 
-    -- ── PullCheck section ──
-    local pcY = starY - 28
-    MakeDivider(pcY)
-
-    local pcLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pcLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, pcY - 6)
-    pcLbl:SetTextColor(0.5, 0.8, 0.5); pcLbl:SetText("Pull Check:")
-
-    local pcToggle = CreateFrame("Button", "CDTPCToggle", f)
-    pcToggle:SetWidth(46); pcToggle:SetHeight(14)
-    pcToggle:SetPoint("TOPLEFT", f, "TOPLEFT", 3, pcY - 18)
-    local pcTogBg = pcToggle:CreateTexture(nil, "BACKGROUND")
-    pcTogBg:SetAllPoints(pcToggle); pcTogBg:SetTexture(0.15, 0.15, 0.3, 0.9)
-    pcToggle.bg = pcTogBg
-    local pcTogTxt = pcToggle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pcTogTxt:SetAllPoints(pcToggle); pcToggle.txt = pcTogTxt
-    pcToggle:SetScript("OnClick", function()
-        CDT_DB.pullcheck = not CDT_DB.pullcheck
-        CDT_CFG_UpdateButtons()
-        PC_UpdateVisibility()
-    end)
-    CDT_CFG_PC_TOGGLE = pcToggle
-
-    local manaLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    manaLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, pcY - 34)
-    manaLbl:SetTextColor(0.8, 0.8, 1); manaLbl:SetText("Mana threshold:")
-
-    CDT_CFG_MANA_VAL = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    CDT_CFG_MANA_VAL:SetPoint("TOPLEFT", f, "TOPLEFT", 110, pcY - 34)
-    CDT_CFG_MANA_VAL:SetTextColor(1, 0.88, 0.6)
-    CDT_CFG_MANA_VAL:SetText(CDT_DB.manaThresh .. "%")
-
-    local slider = CreateFrame("Slider", "CDTManaSlider", f, "OptionsSliderTemplate")
-    slider:SetWidth(180); slider:SetHeight(16)
-    slider:SetPoint("TOPLEFT", f, "TOPLEFT", 8, pcY - 46)
-    slider:SetMinMaxValues(10, 100)
-    slider:SetValueStep(10)
-    slider:SetValue(CDT_DB.manaThresh)
-    CDTManaSliderLow:SetText("")
-    CDTManaSliderHigh:SetText("")
-    CDTManaSliderText:SetText("")
-    slider:SetScript("OnValueChanged", function()
-        local v = _floor(slider:GetValue() / 10 + 0.5) * 10
-        if v < 10  then v = 10  end
-        if v > 100 then v = 100 end
-        CDT_DB.manaThresh = v
-        CDT_CFG_MANA_VAL:SetText(v .. "%")
-    end)
-    CDT_CFG_MANA_SLIDER = slider
 
     CDT_CFG_FRAME = f
     CDT_CFG_UpdateButtons()
@@ -2058,24 +1469,6 @@ function CDT_CFG_UpdateButtons()
         end
     end
 
-    if CDT_CFG_PC_TOGGLE then
-        if CDT_DB.pullcheck then
-            CDT_CFG_PC_TOGGLE.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
-            CDT_CFG_PC_TOGGLE.txt:SetText("on")
-            CDT_CFG_PC_TOGGLE.txt:SetTextColor(0.3, 1, 0.3)
-        else
-            CDT_CFG_PC_TOGGLE.bg:SetTexture(0.2, 0.1, 0.1, 0.9)
-            CDT_CFG_PC_TOGGLE.txt:SetText("off")
-            CDT_CFG_PC_TOGGLE.txt:SetTextColor(0.5, 0.2, 0.2)
-        end
-    end
-
-    if CDT_CFG_MANA_VAL then
-        CDT_CFG_MANA_VAL:SetText(CDT_DB.manaThresh .. "%")
-    end
-    if CDT_CFG_MANA_SLIDER then
-        CDT_CFG_MANA_SLIDER:SetValue(CDT_DB.manaThresh)
-    end
 end
 
 -- ── Events ────────────────────────────────────────────────────────────────────
@@ -2085,8 +1478,6 @@ ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("RAID_ROSTER_UPDATE")
 ev:RegisterEvent("PARTY_MEMBERS_CHANGED")
 ev:RegisterEvent("UNIT_CASTEVENT")
-ev:RegisterEvent("PLAYER_REGEN_DISABLED")
-ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 ev:SetScript("OnEvent", function()
     if event == "PLAYER_ENTERING_WORLD" then
@@ -2103,15 +1494,6 @@ ev:SetScript("OnEvent", function()
         return
     end
 
-    if event == "PLAYER_REGEN_DISABLED" then
-        PC_OnCombatStart()
-        return
-    end
-
-    if event == "PLAYER_REGEN_ENABLED" then
-        PC_OnCombatEnd()
-        return
-    end
 
     -- UNIT_CASTEVENT
     if arg3 == "CAST" then
@@ -2132,11 +1514,6 @@ ev:SetScript("OnEvent", function()
                 CDT_MO_PinExpand()
                 CDT_Redraw()
             end
-        end
-
-        if PC_HEAL_IDS[spellId] and PC_SCANNING and PC_IN_COMBAT then
-            local name = CDT_GUID_TO_NAME[arg1]
-            if name then PC_RecordHealCast(name) end
         end
     end
 end)
@@ -2197,19 +1574,6 @@ SlashCmdList["CDTRACKER"] = function(msg)
         CDT_AddEntry("Garrosh",   676,   nil)
         CDT_Redraw()
         DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Test entries added.")
-    elseif msg == "pctest" then
-        PC_HEALERS["Tyrande"]  = true
-        PC_HEALERS["Anduin"]   = true
-        PC_HEALERS["Uther"]    = true
-        PC_HEALERS["Malfurion"]= true
-        PC_HEALERS["Rehgar"]   = true
-        PC_HEALER_COUNT = 5
-        PC_PENDING[1] = "Hamuul"
-        PC_PENDING[2] = "Velen"
-        PC_PENDING_N  = 2
-        PC_DrawPrompts()
-        PC_Poll()
-        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r PullCheck test data added.")
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r CoolDown Tracker commands:")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt          - toggle show/hide")
@@ -2218,6 +1582,5 @@ SlashCmdList["CDTRACKER"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt reset    - move frame to center")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt cfg      - open config window")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt test     - add CDT test entries")
-        DEFAULT_CHAT_FRAME:AddMessage("  /cdt pctest   - add PullCheck test data")
     end
 end
