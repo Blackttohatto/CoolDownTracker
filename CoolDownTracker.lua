@@ -134,9 +134,7 @@ _kd = nil
 
 -- Config option tables
 CDT_SHOW_OPTS  = { "always", "raid", "mouseover" }
-CDT_READY_OPTS = { "on", "off" }
 CDT_BAR_OPTS   = { "H", "V" }
-CDT_VIEW_OPTS  = { "detail", "summary" }
 
 -- Precomputed raid unit strings
 CDT_RAID_UNITS = {}
@@ -173,8 +171,10 @@ function CDT_InitDB()
     if CDT_DB.y           == nil then CDT_DB.y           = 200      end
     if CDT_DB.shown       == nil then CDT_DB.shown       = true     end
     if CDT_DB.showMode    == nil then CDT_DB.showMode    = "always" end
-    if CDT_DB.viewMode    == nil then CDT_DB.viewMode    = "detail" end
+    if CDT_DB.viewMode    == nil then CDT_DB.viewMode    = "summary" end
     if CDT_DB.readyMode   == nil then CDT_DB.readyMode   = "on"     end
+    CDT_DB.viewMode  = "summary"
+    CDT_DB.readyMode = "on"
     if CDT_DB.barDir      == nil then CDT_DB.barDir      = "H"      end
     if CDT_DB.spells      == nil then CDT_DB.spells      = {}       end
     local n = _getn(CDT_SPELL_DEFS)
@@ -352,8 +352,6 @@ end
 CDT_CFG_FRAME      = nil
 CDT_CONFIRM_FRAME  = nil
 CDT_CFG_SHOW_BTNS  = {}
-CDT_CFG_VIEW_BTNS  = {}
-CDT_CFG_READY_BTNS = {}
 CDT_CFG_BAR_BTNS   = {}
 CDT_CFG_SPELL_CHKS = {}
 
@@ -369,8 +367,8 @@ CDT_SUMM_CACHE = {}
 function CDT_SyncModeFlags()
     CDT_MODE_RAID      = CDT_DB.showMode  == "raid"
     CDT_MODE_MO        = CDT_DB.showMode  == "mouseover"
-    CDT_MODE_SUMM      = CDT_DB.viewMode  == "summary"
-    CDT_READY_OFF_FLAG = CDT_DB.readyMode == "off"
+    CDT_MODE_SUMM      = true
+    CDT_READY_OFF_FLAG = false
     CDT_BAR_VERT       = CDT_MODE_MO and (CDT_DB.barDir == "V")
 end
 
@@ -447,13 +445,8 @@ function CDT_SetBodyVisible(vis)
     if vis == CDT_BODY_VISIBLE then return end
     CDT_BODY_VISIBLE = vis
     if vis then
-        if CDT_MODE_SUMM then
-            CDT_BODY:Hide()
-            CDT_SUMM_BODY:Show()
-        else
-            CDT_SUMM_BODY:Hide()
-            CDT_BODY:Show()
-        end
+        CDT_BODY:Hide()
+        CDT_SUMM_BODY:Show()
     else
         CDT_BODY:Hide()
         CDT_SUMM_BODY:Hide()
@@ -468,11 +461,7 @@ function CDT_ApplyCollapsedSize()
         w = CDT_HDR_H
         h = CDT_W
     else
-        if CDT_MODE_SUMM then
-            w = CDT_SummWidth(CDT_CountEnabled())
-        else
-            w = CDT_W
-        end
+        w = CDT_SummWidth(CDT_CountEnabled())
         h = CDT_HDR_H
     end
     if CDT_LAST_W ~= w or CDT_LAST_H ~= h then
@@ -492,28 +481,11 @@ function CDT_ResizeFrame()
 
     local frameW, frameH
 
-    if CDT_MODE_SUMM then
-        local enabled = CDT_CountEnabled()
-        frameW = CDT_SummWidth(enabled)
-        -- FIX 1: use updated CDT_SUMM_BODY_H (140)
-        frameH = CDT_HDR_H + CDT_SUMM_BODY_H
-        CDT_SUMM_BODY:SetWidth(frameW)
-    else
-        local total = 0
-        local defs  = CDT_SPELL_DEFS
-        local nDefs = _getn(defs)
-        for i = 1, nDefs do
-            local key = defs[i].key
-            if CDT_DB.spells[key] ~= false then
-                local cnt = _getn(CDT_BY_KEY[key])
-                total = total + (cnt > 0 and cnt or 1)
-            end
-        end
-        local bodyH = total * CDT_ROW_H + 2
-        CDT_BODY:SetHeight(bodyH)
-        frameW = CDT_W
-        frameH = CDT_HDR_H + bodyH
-    end
+    local enabled = CDT_CountEnabled()
+    frameW = CDT_SummWidth(enabled)
+    -- FIX 1: use updated CDT_SUMM_BODY_H (140)
+    frameH = CDT_HDR_H + CDT_SUMM_BODY_H
+    CDT_SUMM_BODY:SetWidth(frameW)
 
     -- FIX 2: in vertical mode the main frame stays thin; body floats to the right
     if CDT_BAR_VERT then
@@ -559,14 +531,13 @@ function CDT_Redraw()
     if not CDT_HAS_ACTIVE and not CDT_MODE_MO then return end
 
     local now      = _GetTime()
-    local readyOff = CDT_READY_OFF_FLAG
     local defs     = CDT_SPELL_DEFS
     local nDefs    = _getn(defs)
 
     local anyActive = false
     for i = 1, nDefs do
         local list    = CDT_BY_KEY[defs[i].key]
-        local changed = CDT_PruneList(list, now, readyOff)
+        local changed = CDT_PruneList(list, now, false)
         if changed or list.dirty then
             CDT_SortList(list, now)
             list.dirty = false
@@ -580,116 +551,7 @@ function CDT_Redraw()
         CDT_LAYOUT_DIRTY = false
     end
 
-    if CDT_MODE_SUMM then
-        CDT_SummRedraw(now)
-        return
-    end
-
-    if not CDT_BODY_VISIBLE then return end
-
-    local yOff   = -2
-    local secStr = CDT_SEC_STR
-
-    for si = 1, nDefs do
-        local def       = defs[si]
-        local key       = def.key
-        local blockRows = CDT_BLOCK_ROWS[si]
-        local cache     = CDT_ROW_CACHE[si]
-
-        if CDT_DB.spells[key] == false then
-            for ri = 1, CDT_MAX_ROWS_PER_SPELL do
-                local c = cache[ri]
-                if c.visible then c.visible = false; blockRows[ri]:Hide() end
-            end
-        else
-            local list    = CDT_BY_KEY[key]
-            local count   = _getn(list)
-            local numRows = count > 0 and count or 1
-            local cr, cg, cb = def.cr, def.cg, def.cb
-
-            for ri = 1, CDT_MAX_ROWS_PER_SPELL do
-                local row = blockRows[ri]
-                local c   = cache[ri]
-
-                if ri <= numRows then
-                    if c.yOff ~= yOff then
-                        c.yOff = yOff
-                        row:SetPoint("TOPLEFT", CDT_BODY, "TOPLEFT", 0, yOff)
-                    end
-
-                    local e = list[ri]
-
-                    if ri == 1 then
-                        if not c.lblShown then
-                            c.lblShown = true
-                            row.icon:Show(); row.lbl:Show()
-                        end
-                    else
-                        if c.lblShown ~= false then
-                            c.lblShown = false
-                            row.icon:Hide(); row.lbl:Hide()
-                        end
-                    end
-
-                    local nmTxt
-                    if e then
-                        nmTxt = e.displayName
-                    else
-                        nmTxt = "No casts yet"
-                    end
-                    if c.nm ~= nmTxt then c.nm = nmTxt; row.nm:SetText(nmTxt) end
-
-                    local nnr, nng, nnb
-                    if e then
-                        nnr, nng, nnb = 1, 0.88, 0.6
-                    else
-                        nnr = cr * 0.55; nng = cg * 0.55; nnb = cb * 0.55
-                        if nnr < 0.25 then nnr = 0.25 end
-                        if nng < 0.25 then nng = 0.25 end
-                        if nnb < 0.25 then nnb = 0.25 end
-                    end
-                    if c.nnr ~= nnr or c.nng ~= nng or c.nnb ~= nnb then
-                        c.nnr, c.nng, c.nnb = nnr, nng, nnb
-                        row.nm:SetTextColor(nnr, nng, nnb)
-                    end
-
-                    local tmTxt, tr, tg, tb
-                    if not e then
-                        tmTxt = "-"
-                        tr = cr * 0.45; tg = cg * 0.45; tb = cb * 0.45
-                        if tr < 0.2 then tr = 0.2 end
-                        if tg < 0.2 then tg = 0.2 end
-                        if tb < 0.2 then tb = 0.2 end
-                    elseif e.ready then
-                        tmTxt = "READY"; tr, tg, tb = 0.2, 1, 0.2
-                    else
-                        local rem = e.expireAt - now
-                        local m   = _floor(rem / 60)
-                        local s   = _floor(_mod(rem, 60))
-                        tmTxt = m .. secStr[s]
-                        local frac = rem / e.cd
-                        if frac > 0.5 then      tr, tg, tb = 1, 0.2, 0.2
-                        elseif frac > 0.2 then  tr, tg, tb = 1, 0.6, 0.1
-                        else                    tr, tg, tb = 0.8, 0.8, 0.2 end
-                    end
-                    if c.tm ~= tmTxt then c.tm = tmTxt; row.tm:SetText(tmTxt) end
-                    if c.tr ~= tr or c.tg ~= tg or c.tb ~= tb then
-                        c.tr, c.tg, c.tb = tr, tg, tb
-                        row.tm:SetTextColor(tr, tg, tb)
-                    end
-
-                    if not c.visible then c.visible = true; row:Show() end
-                    yOff = yOff - CDT_ROW_H
-                else
-                    if c.visible then
-                        c.visible = false; c.nm = ""; c.tm = ""
-                        c.tr = -1; c.nnr = -1; c.yOff = nil; c.lblShown = nil
-                        row:Hide()
-                    end
-                end
-            end
-        end
-    end
+    CDT_SummRedraw(now)
 end
 
 -- ── Summary redraw ────────────────────────────────────────────────────────────
@@ -1151,7 +1013,7 @@ end
 
 function CDT_BuildConfig()
     local spellCount = _getn(CDT_SPELL_DEFS)
-    local cfgH = 230 + spellCount * 14 + 28
+    local cfgH = 184 + spellCount * 14 + 28
     local f = CreateFrame("Frame", "CDTConfigFrame", UIParent)
     f:SetWidth(210); f:SetHeight(cfgH)
     f:SetPoint("TOPLEFT", CDT_FRAME, "TOPRIGHT", 4, 0)
@@ -1228,45 +1090,10 @@ function CDT_BuildConfig()
     descMO:SetTextColor(0.45, 0.45, 0.55); descMO:SetWidth(198)
     descMO:SetJustifyH("LEFT"); descMO:SetText("mouseover: collapse to titlebar")
 
-    -- ── View mode ──
-    MakeDivider(-85)
-    local viewLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    viewLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -90)
-    viewLbl:SetTextColor(0.8, 0.8, 1); viewLbl:SetText("View:")
-
-    local viewOpts = CDT_VIEW_OPTS
-    for idx = 1, _getn(viewOpts) do
-        local mode = viewOpts[idx]
-        local btn = CreateFrame("Button", "CDTViewBtn"..idx, f)
-        btn:SetWidth(56); btn:SetHeight(14)
-        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*62, -103)
-        local bbg = btn:CreateTexture(nil, "BACKGROUND")
-        bbg:SetAllPoints(btn); bbg:SetTexture(0.15, 0.15, 0.3, 0.9)
-        btn.bg = bbg
-        local btxt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btxt:SetAllPoints(btn); btxt:SetText(mode); btn.txt = btxt
-        local m = mode
-        btn:SetScript("OnClick", function()
-            CDT_DB.viewMode = m
-            CDT_SyncModeFlags()
-            CDT_CFG_UpdateButtons()
-            CDT_LAST_H = -1; CDT_LAST_W = -1
-            if CDT_BODY_VISIBLE then
-                if CDT_MODE_SUMM then
-                    CDT_BODY:Hide(); CDT_SUMM_BODY:Show()
-                else
-                    CDT_SUMM_BODY:Hide(); CDT_BODY:Show()
-                end
-            end
-            CDT_Redraw()
-        end)
-        CDT_CFG_VIEW_BTNS[idx] = btn
-    end
-
     -- ── Bar orientation ──
-    MakeDivider(-115)
+    MakeDivider(-85)
     local barLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    barLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -120)
+    barLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -90)
     barLbl:SetTextColor(0.8, 0.8, 1); barLbl:SetText("Collapsed bar (mouseover):")
 
     local barOpts = CDT_BAR_OPTS
@@ -1274,7 +1101,7 @@ function CDT_BuildConfig()
         local dir = barOpts[idx]
         local btn = CreateFrame("Button", "CDTBarBtn"..idx, f)
         btn:SetWidth(30); btn:SetHeight(14)
-        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*34, -133)
+        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*34, -103)
         local bbg = btn:CreateTexture(nil, "BACKGROUND")
         bbg:SetAllPoints(btn); bbg:SetTexture(0.15, 0.15, 0.3, 0.9)
         btn.bg = bbg
@@ -1296,56 +1123,20 @@ function CDT_BuildConfig()
     end
 
     local descBar = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    descBar:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -147)
+    descBar:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -117)
     descBar:SetTextColor(0.45, 0.45, 0.55); descBar:SetWidth(198)
     descBar:SetJustifyH("LEFT"); descBar:SetText("H: horizontal strip  V: vertical strip")
 
-    -- ── Ready mode ──
-    MakeDivider(-159)
-    local readyLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    readyLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -164)
-    readyLbl:SetTextColor(0.8, 0.8, 1); readyLbl:SetText("Ready:")
-
-    local readyOpts = CDT_READY_OPTS
-    for idx = 1, _getn(readyOpts) do
-        local mode = readyOpts[idx]
-        local btn = CreateFrame("Button", "CDTReadyBtn"..idx, f)
-        btn:SetWidth(56); btn:SetHeight(14)
-        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*62, -177)
-        local bbg = btn:CreateTexture(nil, "BACKGROUND")
-        bbg:SetAllPoints(btn); bbg:SetTexture(0.15, 0.15, 0.3, 0.9)
-        btn.bg = bbg
-        local btxt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btxt:SetAllPoints(btn); btxt:SetText(mode); btn.txt = btxt
-        local m = mode
-        btn:SetScript("OnClick", function()
-            CDT_DB.readyMode = m
-            CDT_SyncModeFlags()
-            CDT_CFG_UpdateButtons()
-        end)
-        CDT_CFG_READY_BTNS[idx] = btn
-    end
-
-    local descOn = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    descOn:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -191)
-    descOn:SetTextColor(0.45, 0.45, 0.55); descOn:SetWidth(198)
-    descOn:SetJustifyH("LEFT"); descOn:SetText("on: keep row with READY text")
-
-    local descOff = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    descOff:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -201)
-    descOff:SetTextColor(0.45, 0.45, 0.55); descOff:SetWidth(198)
-    descOff:SetJustifyH("LEFT"); descOff:SetText("off: remove row 10s after READY")
-
     -- ── Spell filter ──
-    MakeDivider(-213)
+    MakeDivider(-129)
     local spellsLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    spellsLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -218)
+    spellsLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -134)
     spellsLbl:SetTextColor(0.8, 0.8, 1); spellsLbl:SetText("Track spells:")
 
     CDT_CFG_SPELL_CHKS = {}
     for i = 1, spellCount do
         local def  = CDT_SPELL_DEFS[i]
-        local yOff = -218 - 4 - i * 14
+        local yOff = -134 - 4 - i * 14
 
         local box = CreateFrame("Frame", "CDTSpellBox"..i, f)
         box:SetWidth(10); box:SetHeight(10)
@@ -1367,7 +1158,7 @@ function CDT_BuildConfig()
         btn:SetScript("OnClick", function()
             CDT_DB.spells[k] = (CDT_DB.spells[k] == false) and true or false
             CDT_CFG_UpdateButtons()
-            if CDT_MODE_SUMM and CDT_BODY_VISIBLE then
+            if CDT_BODY_VISIBLE then
                 CDT_LAST_W = -1
                 CDT_ResizeFrame()
                 CDT_Redraw()
@@ -1378,7 +1169,7 @@ function CDT_BuildConfig()
     end
 
     -- Star disclaimer
-    local starY = -218 - 4 - spellCount * 14 - 6
+    local starY = -134 - 4 - spellCount * 14 - 6
     local starDisc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     starDisc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, starY)
     starDisc:SetTextColor(0.55, 0.52, 0.28)
@@ -1406,21 +1197,6 @@ function CDT_CFG_UpdateButtons()
         end
     end
 
-    local viewOpts = CDT_VIEW_OPTS
-    local curView  = CDT_DB.viewMode
-    for idx = 1, _getn(viewOpts) do
-        local btn = CDT_CFG_VIEW_BTNS[idx]
-        if btn then
-            if curView == viewOpts[idx] then
-                btn.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
-                btn.txt:SetTextColor(0.3, 1, 0.3)
-            else
-                btn.bg:SetTexture(0.15, 0.15, 0.3, 0.9)
-                btn.txt:SetTextColor(0.65, 0.65, 0.65)
-            end
-        end
-    end
-
     local barOpts = CDT_BAR_OPTS
     local curBar  = CDT_DB.barDir
     local isMO    = (curShow == "mouseover")
@@ -1436,21 +1212,6 @@ function CDT_CFG_UpdateButtons()
             else
                 btn.bg:SetTexture(0.08, 0.08, 0.08, 0.5)
                 btn.txt:SetTextColor(0.25, 0.25, 0.25)
-            end
-        end
-    end
-
-    local readyOpts = CDT_READY_OPTS
-    local curReady  = CDT_DB.readyMode
-    for idx = 1, _getn(readyOpts) do
-        local btn = CDT_CFG_READY_BTNS[idx]
-        if btn then
-            if curReady == readyOpts[idx] then
-                btn.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
-                btn.txt:SetTextColor(0.3, 1, 0.3)
-            else
-                btn.bg:SetTexture(0.15, 0.15, 0.3, 0.9)
-                btn.txt:SetTextColor(0.65, 0.65, 0.65)
             end
         end
     end
