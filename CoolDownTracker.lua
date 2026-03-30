@@ -378,6 +378,71 @@ function CDT_AnnounceReady(key, label)
     end
 end
 
+function CDT_AnnounceCurrent(key, label)
+    local list = CDT_BY_KEY[key]
+    if not list then return end
+
+    local n = _getn(list)
+    local now = _GetTime()
+    local readyCnt = 0
+    local readyNames = ""
+    local soonest = nil
+    local soonestName = nil
+
+    for i = 1, n do
+        local e = list[i]
+        if e.ready then
+            if readyCnt == 0 then readyNames = e.name
+            else readyNames = readyNames .. ", " .. e.name end
+            readyCnt = readyCnt + 1
+        elseif not soonest or e.expireAt < soonest then
+            soonest = e.expireAt
+            soonestName = e.name
+        end
+    end
+
+    local msg
+    if n == 0 then
+        msg = "[CDT] " .. label .. ": no tracked cooldowns."
+    elseif readyCnt > 0 then
+        msg = "[CDT] " .. label .. ": READY(" .. readyCnt .. ") " .. readyNames
+    elseif soonest then
+        local rem = soonest - now
+        if rem < 0 then rem = 0 end
+        local m = _floor(rem / 60)
+        local s = _floor(_mod(rem, 60))
+        msg = "[CDT] " .. label .. ": next " .. (soonestName or "?") .. " " .. m .. CDT_SEC_STR[s]
+    else
+        msg = "[CDT] " .. label .. ": no tracked cooldowns."
+    end
+
+    if GetNumRaidMembers() > 0 then
+        SendChatMessage(msg, "RAID")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Join a raid to post this in /raid.")
+    end
+end
+
+function CDT_ClearSpellEntries(key)
+    local list = CDT_BY_KEY[key]
+    if not list then return end
+
+    local n = _getn(list)
+    for i = 1, n do list[i] = nil end
+    list.dirty = false
+
+    CDT_HAS_ACTIVE = false
+    local defs = CDT_SPELL_DEFS
+    for i = 1, _getn(defs) do
+        if _getn(CDT_BY_KEY[defs[i].key]) > 0 then
+            CDT_HAS_ACTIVE = true
+            break
+        end
+    end
+    CDT_LAYOUT_DIRTY = true
+    CDT_Redraw()
+end
+
 -- ── Global UI state ───────────────────────────────────────────────────────────
 CDT_FRAME         = nil
 CDT_HDR_FRAME     = nil   -- FIX 2: reference to header frame for vertical resize
@@ -392,6 +457,10 @@ CDT_MO_PIN_UNTIL  = 0
 CDT_BODY_VISIBLE  = false
 CDT_LAST_H        = -1
 CDT_LAST_W        = -1
+CDT_CONFIRM_SPELL_KEY = nil
+CDT_CONFIRM_SPELL_LABEL = nil
+CDT_SPELL_CONFIRM_FRAME = nil
+CDT_SPELL_CONFIRM_LABEL = nil
 
 CDT_MODE_RAID      = false
 CDT_MODE_MO        = false
@@ -1571,6 +1640,18 @@ function CDT_Build()
         iconStripe:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", 0, 0)
         iconStripe:SetTexture(def.cr, def.cg, def.cb, 0.9)
 
+        local spellKey = def.key
+        local spellLabel = def.label
+        iconFrame:EnableMouse(true)
+        iconFrame:RegisterForClicks("LeftButtonUp")
+        iconFrame:SetScript("OnClick", function()
+            if IsControlKeyDown() then
+                CDT_ShowSpellConfirm(spellKey, spellLabel, iconFrame)
+            elseif IsShiftKeyDown() then
+                CDT_AnnounceCurrent(spellKey, spellLabel)
+            end
+        end)
+
         iconFrame:Hide()
 
         local nmFs = {}
@@ -1626,6 +1707,7 @@ function CDT_Build()
 
     CDT_READY = true
     CDT_BuildConfirm()
+    CDT_BuildSpellConfirm()
     CDT_BuildConfig()
     PC_Build()
     -- FIX 2: apply header layout for current mode (handles vertical strip correctly)
@@ -1685,6 +1767,61 @@ function CDT_ShowConfirm()
     CDT_CONFIRM_FRAME:ClearAllPoints()
     CDT_CONFIRM_FRAME:SetPoint("TOP", CDT_FRAME, "BOTTOM", 0, -4)
     CDT_CONFIRM_FRAME:Show()
+end
+
+function CDT_BuildSpellConfirm()
+    local f = CreateFrame("Frame", "CDTSpellConfirmFrame", UIParent)
+    f:SetWidth(180); f:SetHeight(60)
+    f:SetFrameStrata("TOOLTIP"); f:SetMovable(false); f:EnableMouse(true); f:Hide()
+
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(f); bg:SetTexture(0.08, 0.04, 0.04, 0.97)
+    local border = f:CreateTexture(nil, "BORDER")
+    border:SetAllPoints(f); border:SetTexture(0.5, 0.2, 0.2, 0.6)
+    local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetPoint("TOP", f, "TOP", 0, -10)
+    lbl:SetTextColor(1, 0.7, 0.7)
+    lbl:SetText("")
+
+    local yesBtn = CreateFrame("Button", "CDTSpellConfirmYes", f)
+    yesBtn:SetWidth(60); yesBtn:SetHeight(16)
+    yesBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 10, 8)
+    local yesBg = yesBtn:CreateTexture(nil, "BACKGROUND")
+    yesBg:SetAllPoints(yesBtn); yesBg:SetTexture(0.4, 0.1, 0.1, 0.9)
+    local yesTxt = yesBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    yesTxt:SetAllPoints(yesBtn); yesTxt:SetText("Yes, clear"); yesTxt:SetTextColor(1, 0.5, 0.5)
+    yesBtn:SetScript("OnClick", function()
+        if CDT_CONFIRM_SPELL_KEY then
+            CDT_ClearSpellEntries(CDT_CONFIRM_SPELL_KEY)
+        end
+        f:Hide()
+    end)
+
+    local noBtn = CreateFrame("Button", "CDTSpellConfirmNo", f)
+    noBtn:SetWidth(50); noBtn:SetHeight(16)
+    noBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 8)
+    local noBg = noBtn:CreateTexture(nil, "BACKGROUND")
+    noBg:SetAllPoints(noBtn); noBg:SetTexture(0.15, 0.15, 0.15, 0.9)
+    local noTxt = noBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    noTxt:SetAllPoints(noBtn); noTxt:SetText("Cancel"); noTxt:SetTextColor(0.7, 0.7, 0.7)
+    noBtn:SetScript("OnClick", function() f:Hide() end)
+
+    CDT_SPELL_CONFIRM_FRAME = f
+    CDT_SPELL_CONFIRM_LABEL = lbl
+end
+
+function CDT_ShowSpellConfirm(key, label, anchorFrame)
+    if not CDT_SPELL_CONFIRM_FRAME then return end
+    CDT_CONFIRM_SPELL_KEY = key
+    CDT_CONFIRM_SPELL_LABEL = label
+    CDT_SPELL_CONFIRM_LABEL:SetText("Clear " .. label .. " data?")
+    CDT_SPELL_CONFIRM_FRAME:ClearAllPoints()
+    if anchorFrame then
+        CDT_SPELL_CONFIRM_FRAME:SetPoint("TOP", anchorFrame, "BOTTOM", 0, -4)
+    else
+        CDT_SPELL_CONFIRM_FRAME:SetPoint("TOP", CDT_FRAME, "BOTTOM", 0, -4)
+    end
+    CDT_SPELL_CONFIRM_FRAME:Show()
 end
 
 -- ── Config popup ──────────────────────────────────────────────────────────────
