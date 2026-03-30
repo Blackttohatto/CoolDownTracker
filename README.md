@@ -14,3 +14,8 @@ Drop the `CoolDownTracker` folder into `Interface/AddOns/`.
 - `/cdt reset` — move frame to center
 - `/cdt cfg` — open config
 - `/cdt test` — add test entries
+
+
+## Current UI scope
+- Summary-only view (detail mode removed).
+- Ready entries are always retained/shown in summary behavior (no Ready mode toggle).
