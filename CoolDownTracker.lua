@@ -226,6 +226,7 @@ local function CDT_EnsureSlots(capacity)
         local slot = CreateFrame("Frame", nil, CDT_BODY)
         slot:SetWidth(CDT_COL_W)
         slot:SetHeight(CDT_SLOT_H)
+        slot:EnableMouse(true)
 
         local icon = slot:CreateTexture(nil, "ARTWORK")
         icon:SetWidth(CDT_ICON_SZ)
@@ -241,6 +242,32 @@ local function CDT_EnsureSlots(capacity)
             fs:SetPoint("TOP", slot, "TOP", 0, -(CDT_ICON_SZ + 2 + (r - 1) * 11))
             slot.text[r] = fs
         end
+
+        slot:SetScript("OnEnter", function()
+            if not slot.def then return end
+            local now = _GetTime()
+            local list = CDT_BY_KEY[slot.def.key]
+
+            GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine(slot.def.label)
+
+            if _getn(list) == 0 then
+                GameTooltip:AddLine("No tracked players", 0.7, 0.7, 0.7)
+            else
+                for j = 1, _getn(list) do
+                    local e = list[j]
+                    if e.ready or now >= e.expireAt then
+                        GameTooltip:AddLine(e.displayName .. " - READY", 0.25, 1, 0.25)
+                    else
+                        GameTooltip:AddLine(e.displayName .. " - " .. Sec(e.expireAt - now), 1, 0.82, 0.45)
+                    end
+                end
+            end
+
+            GameTooltip:Show()
+        end)
+        slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         CDT_SLOTS[i] = slot
     end
@@ -279,6 +306,7 @@ local function CDT_Redraw()
             local ready = {}
             local soonest = nil
             local soonestName = ""
+            slot.def = def
 
             for j = 1, _getn(list) do
                 local e = list[j]
@@ -316,6 +344,7 @@ local function CDT_Redraw()
                 slot.text[2]:SetTextColor(0.45, 0.45, 0.45)
             end
         else
+            slot.def = nil
             slot:Hide()
         end
     end
