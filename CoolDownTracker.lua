@@ -28,11 +28,16 @@ CDT_SUMM_GAP      = 2
 CDT_SUMM_PAD      = 2
 CDT_SUMM_NM_H     = 10
 CDT_SUMM_NM_ROWS  = 2
-CDT_SUMM_MIN_COLS = 1
-CDT_SUMM_MIN_ROWS = 1
-CDT_SUMM_MAX_COLS = 12
-CDT_SUMM_MAX_ROWS = 6
+CDT_SUMM_MIN_COLS = 5
+-- Body height: pad + iconSz + 2*nmH + pad = 2+26+20+2 = 50 (single row)
+-- Double row adds another icon + gap + 2*nmH block
+CDT_SUMM_BODY_H_1 = 50
+CDT_SUMM_BODY_H_2 = 104  -- 2+26+20+2+26+20+2 + gap(6)
 
+-- PullCheck panel
+PC_HDR_H  = 13   -- height of the pullcheck header bar
+PC_BODY_H = 13   -- height of a single prompt row
+PC_RANGE  = 40   -- yard threshold for in-range check
 
 -- ── Spell definitions ─────────────────────────────────────────────────────────
 CDT_SPELL_DEFS = {
@@ -133,9 +138,83 @@ CDT_IDS[9862]  = _kd["tranquility"]
 CDT_IDS[9863]  = _kd["tranquility"]
 _kd = nil
 
+-- ── PullCheck healer-detection spell IDs ─────────────────────────────────────
+PC_HEAL_IDS = {}
+-- Flash Heal (Priest) ranks 1-9
+PC_HEAL_IDS[2061]  = true
+PC_HEAL_IDS[9472]  = true
+PC_HEAL_IDS[9473]  = true
+PC_HEAL_IDS[9474]  = true
+PC_HEAL_IDS[10915] = true
+PC_HEAL_IDS[10916] = true
+PC_HEAL_IDS[10917] = true
+PC_HEAL_IDS[25233] = true
+PC_HEAL_IDS[25235] = true
+-- Chain Heal (Shaman) ranks 1-4
+PC_HEAL_IDS[1064]  = true
+PC_HEAL_IDS[10622] = true
+PC_HEAL_IDS[10623] = true
+PC_HEAL_IDS[25422] = true
+-- Rejuvenation (Druid) ranks 1-10
+PC_HEAL_IDS[774]   = true
+PC_HEAL_IDS[1058]  = true
+PC_HEAL_IDS[1430]  = true
+PC_HEAL_IDS[2090]  = true
+PC_HEAL_IDS[2091]  = true
+PC_HEAL_IDS[3627]  = true
+PC_HEAL_IDS[8910]  = true
+PC_HEAL_IDS[9839]  = true
+PC_HEAL_IDS[9840]  = true
+PC_HEAL_IDS[25299] = true
+-- Regrowth (Druid) ranks 1-9
+PC_HEAL_IDS[8936]  = true
+PC_HEAL_IDS[8938]  = true
+PC_HEAL_IDS[8939]  = true
+PC_HEAL_IDS[8940]  = true
+PC_HEAL_IDS[8941]  = true
+PC_HEAL_IDS[9750]  = true
+PC_HEAL_IDS[9856]  = true
+PC_HEAL_IDS[9857]  = true
+PC_HEAL_IDS[9858]  = true
+-- Healing Touch (Druid) ranks 1-11
+PC_HEAL_IDS[5185]  = true
+PC_HEAL_IDS[5186]  = true
+PC_HEAL_IDS[5187]  = true
+PC_HEAL_IDS[5188]  = true
+PC_HEAL_IDS[5189]  = true
+PC_HEAL_IDS[6778]  = true
+PC_HEAL_IDS[8903]  = true
+PC_HEAL_IDS[9758]  = true
+PC_HEAL_IDS[9888]  = true
+PC_HEAL_IDS[9889]  = true
+PC_HEAL_IDS[25297] = true
+-- Daybreak (Paladin proc) -- kept, but paladins now detected via Flash of Light / Holy Light
+PC_HEAL_IDS[28562] = true
+PC_HEAL_IDS[28563] = true
+-- Flash of Light (Paladin) ranks 1-7
+PC_HEAL_IDS[19750] = true
+PC_HEAL_IDS[19939] = true
+PC_HEAL_IDS[19940] = true
+PC_HEAL_IDS[19941] = true
+PC_HEAL_IDS[19942] = true
+PC_HEAL_IDS[19943] = true
+PC_HEAL_IDS[25514] = true
+-- Holy Light (Paladin) ranks 1-10
+PC_HEAL_IDS[635]   = true
+PC_HEAL_IDS[639]   = true
+PC_HEAL_IDS[647]   = true
+PC_HEAL_IDS[1026]  = true
+PC_HEAL_IDS[1042]  = true
+PC_HEAL_IDS[3472]  = true
+PC_HEAL_IDS[10328] = true
+PC_HEAL_IDS[10329] = true
+PC_HEAL_IDS[25292] = true
+PC_HEAL_IDS[27135] = true
 
 -- Config option tables
 CDT_SHOW_OPTS  = { "always", "raid", "mouseover" }
+CDT_READY_OPTS = { "on", "off" }
+CDT_VIEW_OPTS  = { "detail", "summary" }
 
 -- Precomputed raid unit strings
 CDT_RAID_UNITS = {}
@@ -146,6 +225,7 @@ CDT_GUID_TO_NAME = {}
 
 function CDT_BuildGUIDIndex()
     for k in pairs(CDT_GUID_TO_NAME) do CDT_GUID_TO_NAME[k] = nil end
+    for k in pairs(PC_NAME_TO_UNIT)  do PC_NAME_TO_UNIT[k]  = nil end
     local n = GetNumRaidMembers()
     if n and n > 0 then
         local units = CDT_RAID_UNITS
@@ -154,14 +234,20 @@ function CDT_BuildGUIDIndex()
             local exists, guid = UnitExists(unit)
             if exists and guid then
                 local name = UnitName(unit)
-                if name then CDT_GUID_TO_NAME[guid] = name end
+                if name then
+                    CDT_GUID_TO_NAME[guid] = name
+                    PC_NAME_TO_UNIT[name]  = unit
+                end
             end
         end
     end
     local exists, pguid = UnitExists("player")
     if exists and pguid then
         local pname = UnitName("player")
-        if pname then CDT_GUID_TO_NAME[pguid] = pname end
+        if pname then
+            CDT_GUID_TO_NAME[pguid] = pname
+            PC_NAME_TO_UNIT[pname]  = "player"
+        end
     end
 end
 
@@ -172,14 +258,12 @@ function CDT_InitDB()
     if CDT_DB.y           == nil then CDT_DB.y           = 200      end
     if CDT_DB.shown       == nil then CDT_DB.shown       = true     end
     if CDT_DB.showMode    == nil then CDT_DB.showMode    = "always" end
-    if CDT_DB.viewMode    == nil then CDT_DB.viewMode    = "summary" end
+    if CDT_DB.viewMode    == nil then CDT_DB.viewMode    = "detail" end
     if CDT_DB.readyMode   == nil then CDT_DB.readyMode   = "on"     end
-    CDT_DB.viewMode  = "summary"
-    CDT_DB.readyMode = "on"
-    if CDT_DB.barDir      == nil then CDT_DB.barDir      = "H"      end
-    if CDT_DB.summRows    == nil then CDT_DB.summRows    = 2        end
-    if CDT_DB.summCols    == nil then CDT_DB.summCols    = 5        end
     if CDT_DB.spells      == nil then CDT_DB.spells      = {}       end
+    if CDT_DB.pullcheck   == nil then CDT_DB.pullcheck   = false    end
+    if CDT_DB.manaThresh  == nil then CDT_DB.manaThresh  = 50       end
+    if CDT_DB.bgAlpha     == nil then CDT_DB.bgAlpha     = 80       end
     local n = _getn(CDT_SPELL_DEFS)
     for i = 1, n do
         local d = CDT_SPELL_DEFS[i]
@@ -201,7 +285,6 @@ end
 function CDT_AddEntry(name, spellId, targetName)
     local d = CDT_IDS[spellId]
     if not d then return end
-    if CDT_DB.spells[d.key] == false then return end
     local now  = _GetTime()
     local list = CDT_BY_KEY[d.key]
     local n    = _getn(list)
@@ -212,11 +295,9 @@ function CDT_AddEntry(name, spellId, targetName)
             e.ready    = false
             e.readyAt  = nil
             if targetName then
-                e.target      = targetName
                 e.displayName = name .. "(" .. targetName .. ")"
             end
-            list.dirty      = true
-            CDT_HAS_ACTIVE  = true
+            list.dirty       = true
             CDT_LAYOUT_DIRTY = true
             return
         end
@@ -230,15 +311,13 @@ function CDT_AddEntry(name, spellId, targetName)
     list[n + 1] = {
         name        = name,
         displayName = dispName,
-        target      = targetName,
         key         = d.key,
         cd          = d.cd,
         expireAt    = now + d.cd,
         ready       = false,
         readyAt     = nil,
     }
-    list.dirty      = true
-    CDT_HAS_ACTIVE  = true
+    list.dirty       = true
     CDT_LAYOUT_DIRTY = true
 end
 
@@ -324,11 +403,10 @@ end
 
 -- ── Global UI state ───────────────────────────────────────────────────────────
 CDT_FRAME         = nil
-CDT_HDR_FRAME     = nil   -- FIX 2: reference to header frame for vertical resize
-CDT_HDR_TXT       = nil   -- FIX 2: reference to header text for hide/show
-CDT_HDR_BTNS      = nil   -- FIX 2: reference to header buttons {clrBtn, cfgBtn}
+CDT_HDR_FRAME     = nil   -- header frame ref for width sync
 CDT_BODY          = nil
 CDT_SUMM_BODY     = nil
+CDT_MAIN_BG       = nil   -- main frame background texture
 CDT_READY         = false
 CDT_MOUSEOVER     = false
 CDT_MO_PINNED     = false
@@ -342,7 +420,6 @@ CDT_MODE_MO        = false
 CDT_MODE_SUMM      = false
 CDT_READY_OFF_FLAG = false
 
-CDT_HAS_ACTIVE   = false
 CDT_LAYOUT_DIRTY = false
 
 CDT_SEC_STR = {}
@@ -354,9 +431,15 @@ end
 CDT_CFG_FRAME      = nil
 CDT_CONFIRM_FRAME  = nil
 CDT_CFG_SHOW_BTNS  = {}
+CDT_CFG_VIEW_BTNS  = {}
+CDT_CFG_READY_BTNS = {}
 CDT_CFG_SPELL_CHKS = {}
-CDT_CFG_SUMM_ROWS_TXT = nil
-CDT_CFG_SUMM_COLS_TXT = nil
+
+CDT_BODY_BG   = nil   -- detail body background texture
+CDT_SUMM_BG   = nil   -- summary body background texture
+
+CDT_CFG_MANA_EB  = nil   -- mana threshold EditBox
+CDT_CFG_ALPHA_EB = nil   -- bg alpha EditBox
 
 CDT_BLOCK_ROWS         = {}
 CDT_ROW_CACHE          = {}
@@ -364,16 +447,58 @@ CDT_MAX_ROWS_PER_SPELL = 8
 
 CDT_SUMM_COLS  = {}
 CDT_SUMM_CACHE = {}
-CDT_SUMM_READY_NAMES = { nil, nil }
-CDT_SUMM_TXT         = { "", "" }
 
+-- Preallocated scratch tables for CDT_SummRedraw — avoids per-tick allocation
+CDT_SUMM_READY_NAMES = { nil, nil }
+CDT_SUMM_TXT         = { "", "", "" }
+
+-- Summary mouseover tooltip
+CDT_SUMM_TT      = nil   -- tooltip frame
+CDT_SUMM_TT_ROWS = {}    -- preallocated FontString rows
+CDT_SUMM_TT_MAX  = 10    -- max entries shown (CDT_MAX_ROWS_PER_SPELL + label + padding)
+
+-- ── PullCheck state ───────────────────────────────────────────────────────────
+PC_FRAME         = nil
+PC_HDR_TXT       = nil
+PC_PROMPT_ROWS   = {}
+PC_MAX_PROMPTS   = 8
+
+PC_HEALERS       = {}
+PC_HEALER_COUNT  = 0
+
+PC_DETECT_COUNTS = {}
+PC_PENDING       = {}
+PC_PENDING_N     = 0
+PC_IN_COMBAT     = false
+
+PC_H_IN    = 0
+PC_H_TOT   = 0
+PC_M_IN    = 0
+PC_P_IN    = 0
+PC_P_TOT   = 0
+
+PC_MO_FRAME      = nil
+PC_MO_ROWS       = {}
+PC_MO_MAX        = 20
+
+PC_CLR_FRAME     = nil
+
+-- Reverse lookup: healer name -> raid unit string, rebuilt on roster change
+PC_NAME_TO_UNIT  = {}
 
 -- ── Mode flag sync ────────────────────────────────────────────────────────────
 function CDT_SyncModeFlags()
     CDT_MODE_RAID      = CDT_DB.showMode  == "raid"
     CDT_MODE_MO        = CDT_DB.showMode  == "mouseover"
-    CDT_MODE_SUMM      = true
-    CDT_READY_OFF_FLAG = false
+    CDT_MODE_SUMM      = CDT_DB.viewMode  == "summary"
+    CDT_READY_OFF_FLAG = CDT_DB.readyMode == "off"
+end
+
+function CDT_ApplyBgAlpha()
+    local a = CDT_DB.bgAlpha / 100
+    if CDT_MAIN_BG then CDT_MAIN_BG:SetTexture(0,    0,    0,    a)          end
+    if CDT_BODY_BG  then CDT_BODY_BG:SetTexture(0.02, 0.02, 0.04, a * 1.06) end
+    if CDT_SUMM_BG  then CDT_SUMM_BG:SetTexture(0.02, 0.02, 0.04, a * 1.06) end
 end
 
 -- ── Summary layout helpers ────────────────────────────────────────────────────
@@ -390,45 +515,28 @@ function CDT_CountEnabled()
     return count
 end
 
-function CDT_SummWidth()
-    local cols = CDT_DB.summCols or 5
+-- Returns cols, useDoubleRow based on enabled count.
+-- <=6 enabled -> single row; >6 -> two rows. Min cols = CDT_SUMM_MIN_COLS (5).
+function CDT_SummLayout(enabledCount)
+    local useDouble = (enabledCount > 6)
+    local cols
+    if useDouble then
+        cols = _floor((enabledCount + 1) / 2)
+    else
+        cols = enabledCount
+    end
     if cols < CDT_SUMM_MIN_COLS then cols = CDT_SUMM_MIN_COLS end
-    if cols > CDT_SUMM_MAX_COLS then cols = CDT_SUMM_MAX_COLS end
+    return cols, useDouble
+end
+
+function CDT_SummWidth(enabledCount)
+    local cols, _ = CDT_SummLayout(enabledCount)
     return cols * CDT_SUMM_COL_W + (cols - 1) * CDT_SUMM_GAP + 2 * CDT_SUMM_PAD
 end
 
-function CDT_SummBodyH()
-    local rows = CDT_DB.summRows or 2
-    if rows < CDT_SUMM_MIN_ROWS then rows = CDT_SUMM_MIN_ROWS end
-    if rows > CDT_SUMM_MAX_ROWS then rows = CDT_SUMM_MAX_ROWS end
-    local blockH = CDT_SUMM_ICON_SZ + CDT_SUMM_NM_ROWS * CDT_SUMM_NM_H
-    return 2 * CDT_SUMM_PAD + rows * blockH + (rows - 1) * CDT_SUMM_GAP
-end
-
--- ── FIX 2: Header resize for vertical mode ────────────────────────────────────
--- Reconfigures the header frame dimensions and child visibility based on current mode.
--- Called whenever showMode or barDir changes, and once at build time.
-function CDT_ApplyHeaderLayout()
-    if not CDT_HDR_FRAME then return end
-    CDT_HDR_FRAME:SetHeight(CDT_HDR_H)
-    CDT_HDR_FRAME:SetWidth(CDT_FRAME:GetWidth())
-    if CDT_HDR_TXT  then CDT_HDR_TXT:Show()  end
-    if CDT_HDR_BTNS then
-        CDT_HDR_BTNS[1]:Show()
-        CDT_HDR_BTNS[2]:Show()
-    end
-end
-
--- ── FIX 3: TOPLEFT-anchored body attachment ───────────────────────────────────
--- Re-anchors CDT_BODY and CDT_SUMM_BODY based on current bar orientation.
--- In normal mode bodies hang below the header.
--- In vertical mode bodies open to the right of the thin strip.
-function CDT_RebuildBodyAnchor()
-    if not CDT_BODY then return end
-    CDT_BODY:ClearAllPoints()
-    CDT_SUMM_BODY:ClearAllPoints()
-    CDT_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
-    CDT_SUMM_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
+function CDT_SummBodyH(enabledCount)
+    local _, useDouble = CDT_SummLayout(enabledCount)
+    if useDouble then return CDT_SUMM_BODY_H_2 else return CDT_SUMM_BODY_H_1 end
 end
 
 -- ── Visibility / resize ───────────────────────────────────────────────────────
@@ -438,8 +546,13 @@ function CDT_SetBodyVisible(vis)
     if vis == CDT_BODY_VISIBLE then return end
     CDT_BODY_VISIBLE = vis
     if vis then
-        CDT_BODY:Hide()
-        CDT_SUMM_BODY:Show()
+        if CDT_MODE_SUMM then
+            CDT_BODY:Hide()
+            CDT_SUMM_BODY:Show()
+        else
+            CDT_SUMM_BODY:Hide()
+            CDT_BODY:Show()
+        end
     else
         CDT_BODY:Hide()
         CDT_SUMM_BODY:Hide()
@@ -449,14 +562,15 @@ end
 
 function CDT_ApplyCollapsedSize()
     local w, h
-    if CDT_BAR_VERT then
-        -- FIX 2: vertical strip — narrow width, tall height
-        w = CDT_HDR_H
-        h = CDT_W
+    if CDT_MODE_SUMM then
+        w = CDT_SummWidth(CDT_CountEnabled())
     else
-        w = CDT_SummWidth()
-        h = CDT_HDR_H
+        w = CDT_W
     end
+    h = CDT_HDR_H
+    -- Sync header and pullcheck to match collapsed width
+    if CDT_HDR_FRAME then CDT_HDR_FRAME:SetWidth(w) end
+    PC_SyncWidth(w)
     if CDT_LAST_W ~= w or CDT_LAST_H ~= h then
         CDT_LAST_W = w
         CDT_LAST_H = h
@@ -474,15 +588,34 @@ function CDT_ResizeFrame()
 
     local frameW, frameH
 
-    frameW = CDT_SummWidth()
-    frameH = CDT_HDR_H + CDT_SummBodyH()
-    CDT_SUMM_BODY:SetWidth(frameW)
-    CDT_SUMM_BODY:SetHeight(CDT_SummBodyH())
-
-    -- FIX 2: in vertical mode the main frame stays thin; body floats to the right
-    if CDT_BAR_VERT then
-        frameW = CDT_HDR_H
-        frameH = CDT_W
+    if CDT_MODE_SUMM then
+        local enabled = CDT_CountEnabled()
+        frameW = CDT_SummWidth(enabled)
+        local bodyH = CDT_SummBodyH(enabled)
+        frameH = CDT_HDR_H + bodyH
+        CDT_SUMM_BODY:SetWidth(frameW)
+        CDT_SUMM_BODY:SetHeight(bodyH)
+        -- Sync header and pullcheck to match summary width
+        if CDT_HDR_FRAME then CDT_HDR_FRAME:SetWidth(frameW) end
+        PC_SyncWidth(frameW)
+    else
+        local total = 0
+        local defs  = CDT_SPELL_DEFS
+        local nDefs = _getn(defs)
+        for i = 1, nDefs do
+            local key = defs[i].key
+            if CDT_DB.spells[key] ~= false then
+                local cnt = _getn(CDT_BY_KEY[key])
+                total = total + (cnt > 0 and cnt or 1)
+            end
+        end
+        local bodyH = total * CDT_ROW_H + 2
+        CDT_BODY:SetHeight(bodyH)
+        frameW = CDT_W
+        frameH = CDT_HDR_H + bodyH
+        -- Restore header and pullcheck to detail width
+        if CDT_HDR_FRAME then CDT_HDR_FRAME:SetWidth(CDT_W) end
+        PC_SyncWidth(CDT_W)
     end
 
     if frameH ~= CDT_LAST_H or frameW ~= CDT_LAST_W then
@@ -506,6 +639,7 @@ function CDT_UpdateVisibility()
         if CDT_DB.shown then CDT_FRAME:Show() else CDT_FRAME:Hide() end
         CDT_SetBodyVisible(true)
     end
+    PC_UpdateVisibility()
 end
 
 function CDT_MO_PinExpand()
@@ -521,27 +655,134 @@ function CDT_Redraw()
     if not CDT_READY then return end
 
     local now      = _GetTime()
+    local readyOff = CDT_READY_OFF_FLAG
     local defs     = CDT_SPELL_DEFS
     local nDefs    = _getn(defs)
 
-    local anyActive = false
     for i = 1, nDefs do
         local list    = CDT_BY_KEY[defs[i].key]
-        local changed = CDT_PruneList(list, now, false)
+        local changed = CDT_PruneList(list, now, readyOff)
         if changed or list.dirty then
             CDT_SortList(list, now)
             list.dirty = false
         end
-        if _getn(list) > 0 then anyActive = true end
     end
-    CDT_HAS_ACTIVE = anyActive
 
     if CDT_LAYOUT_DIRTY then
         CDT_ResizeFrame()
         CDT_LAYOUT_DIRTY = false
     end
 
-    CDT_SummRedraw(now)
+    if CDT_MODE_SUMM then
+        CDT_SummRedraw(now)
+        return
+    end
+
+    if not CDT_BODY_VISIBLE then return end
+
+    local yOff   = -2
+    local secStr = CDT_SEC_STR
+
+    for si = 1, nDefs do
+        local def       = defs[si]
+        local key       = def.key
+        local blockRows = CDT_BLOCK_ROWS[si]
+        local cache     = CDT_ROW_CACHE[si]
+
+        if CDT_DB.spells[key] == false then
+            for ri = 1, CDT_MAX_ROWS_PER_SPELL do
+                local c = cache[ri]
+                if c.visible then c.visible = false; blockRows[ri]:Hide() end
+            end
+        else
+            local list    = CDT_BY_KEY[key]
+            local count   = _getn(list)
+            local numRows = count > 0 and count or 1
+            local cr, cg, cb = def.cr, def.cg, def.cb
+
+            for ri = 1, CDT_MAX_ROWS_PER_SPELL do
+                local row = blockRows[ri]
+                local c   = cache[ri]
+
+                if ri <= numRows then
+                    if c.yOff ~= yOff then
+                        c.yOff = yOff
+                        row:SetPoint("TOPLEFT", CDT_BODY, "TOPLEFT", 0, yOff)
+                    end
+
+                    local e = list[ri]
+
+                    if ri == 1 then
+                        if not c.lblShown then
+                            c.lblShown = true
+                            row.icon:Show(); row.lbl:Show()
+                        end
+                    else
+                        if c.lblShown ~= false then
+                            c.lblShown = false
+                            row.icon:Hide(); row.lbl:Hide()
+                        end
+                    end
+
+                    local nmTxt
+                    if e then
+                        nmTxt = e.displayName
+                    else
+                        nmTxt = "No casts yet"
+                    end
+                    if c.nm ~= nmTxt then c.nm = nmTxt; row.nm:SetText(nmTxt) end
+
+                    local nnr, nng, nnb
+                    if e then
+                        nnr, nng, nnb = 1, 0.88, 0.6
+                    else
+                        nnr = cr * 0.55; nng = cg * 0.55; nnb = cb * 0.55
+                        if nnr < 0.25 then nnr = 0.25 end
+                        if nng < 0.25 then nng = 0.25 end
+                        if nnb < 0.25 then nnb = 0.25 end
+                    end
+                    if c.nnr ~= nnr or c.nng ~= nng or c.nnb ~= nnb then
+                        c.nnr, c.nng, c.nnb = nnr, nng, nnb
+                        row.nm:SetTextColor(nnr, nng, nnb)
+                    end
+
+                    local tmTxt, tr, tg, tb
+                    if not e then
+                        tmTxt = "-"
+                        tr = cr * 0.45; tg = cg * 0.45; tb = cb * 0.45
+                        if tr < 0.2 then tr = 0.2 end
+                        if tg < 0.2 then tg = 0.2 end
+                        if tb < 0.2 then tb = 0.2 end
+                    elseif e.ready then
+                        tmTxt = "READY"; tr, tg, tb = 0.2, 1, 0.2
+                    else
+                        local rem = e.expireAt - now
+                        local m   = _floor(rem / 60)
+                        local s   = _floor(_mod(rem, 60))
+                        tmTxt = m .. secStr[s]
+                        local frac = rem / e.cd
+                        if frac > 0.5 then      tr, tg, tb = 1, 0.2, 0.2
+                        elseif frac > 0.2 then  tr, tg, tb = 1, 0.6, 0.1
+                        else                    tr, tg, tb = 0.8, 0.8, 0.2 end
+                    end
+                    if c.tm ~= tmTxt then c.tm = tmTxt; row.tm:SetText(tmTxt) end
+                    if c.tr ~= tr or c.tg ~= tg or c.tb ~= tb then
+                        c.tr, c.tg, c.tb = tr, tg, tb
+                        row.tm:SetTextColor(tr, tg, tb)
+                    end
+
+                    if not c.visible then c.visible = true; row:Show() end
+                    yOff = yOff - CDT_ROW_H
+                else
+                    if c.visible then
+                        c.visible = false; c.nm = ""; c.tm = ""
+                        c.tr = -1; c.nnr = -1; c.yOff = nil; c.lblShown = nil
+                        row:Hide()
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- ── Summary redraw ────────────────────────────────────────────────────────────
@@ -558,13 +799,12 @@ function CDT_SummRedraw(now)
     local iconSz  = CDT_SUMM_ICON_SZ
     local nmH     = CDT_SUMM_NM_H
 
-    local cols = CDT_DB.summCols or 5
-    local rows = CDT_DB.summRows or 2
-    if cols < CDT_SUMM_MIN_COLS then cols = CDT_SUMM_MIN_COLS end
-    if cols > CDT_SUMM_MAX_COLS then cols = CDT_SUMM_MAX_COLS end
-    if rows < CDT_SUMM_MIN_ROWS then rows = CDT_SUMM_MIN_ROWS end
-    if rows > CDT_SUMM_MAX_ROWS then rows = CDT_SUMM_MAX_ROWS end
-    local maxSlots = cols * rows
+    local enabled = 0
+    for i = 1, nDefs do
+        if CDT_DB.spells[defs[i].key] ~= false then enabled = enabled + 1 end
+    end
+
+    local cols, useDouble = CDT_SummLayout(enabled)
 
     local slot = 0
 
@@ -578,29 +818,35 @@ function CDT_SummRedraw(now)
             if ca.visible then
                 ca.visible = false
                 sc.iconFrame:Hide()
-                sc.nm[1]:Hide(); sc.nm[2]:Hide()
+                sc.nm[1]:Hide(); sc.nm[2]:Hide(); sc.nm[3]:Hide()
             end
         else
-            if slot >= maxSlots then
-                if ca.visible then
-                    ca.visible = false
-                    sc.iconFrame:Hide()
-                    sc.nm[1]:Hide(); sc.nm[2]:Hide()
-                end
-                slot = slot + 1
+            -- Slot -> col/row using the new layout
+            local colIdx, rowIdx
+            if useDouble then
+                colIdx = _mod(slot, cols)
+                rowIdx = _floor(slot / cols)
             else
-            local colIdx  = _mod(slot, cols)
-            local rowIdx  = _floor(slot / cols)
+                colIdx = slot   -- single row: each slot is its own column
+                rowIdx = 0
+            end
+
             local xOff    = pad + colIdx * (colW + gap)
-            local blockStep = iconSz + CDT_SUMM_NM_ROWS * nmH + gap
-            local iconY    = -(pad + rowIdx * blockStep)
-            local nmBaseY  = -(pad + rowIdx * blockStep + iconSz + 1)
+            local iconY
+            local nmBaseY
+            if rowIdx == 0 then
+                iconY    = -pad
+                nmBaseY  = -(pad + iconSz + 1)
+            else
+                iconY    = -(pad + iconSz + gap + CDT_SUMM_NM_ROWS * nmH + gap)
+                nmBaseY  = -(pad + iconSz + gap + CDT_SUMM_NM_ROWS * nmH + gap + iconSz + 1)
+            end
 
             if ca.xOff ~= xOff or ca.rowIdx ~= rowIdx then
                 ca.xOff   = xOff
                 ca.rowIdx = rowIdx
                 sc.iconFrame:SetPoint("TOPLEFT", CDT_SUMM_BODY, "TOPLEFT", xOff, iconY)
-                for r = 1, CDT_SUMM_NM_ROWS do
+                for r = 1, 3 do
                     sc.nm[r]:SetPoint("TOPLEFT", CDT_SUMM_BODY, "TOPLEFT",
                         xOff, nmBaseY - (r - 1) * nmH)
                 end
@@ -609,11 +855,11 @@ function CDT_SummRedraw(now)
             if not ca.visible then
                 ca.visible = true
                 sc.iconFrame:Show()
-                sc.nm[1]:Show(); sc.nm[2]:Show()
+                sc.nm[1]:Show(); sc.nm[2]:Show(); sc.nm[3]:Show()
             end
 
-            local list     = CDT_BY_KEY[key]
-            local n        = _getn(list)
+            local list       = CDT_BY_KEY[key]
+            local n          = _getn(list)
             local readyNames = CDT_SUMM_READY_NAMES
             local readyCnt   = 0
             local soonest    = nil
@@ -624,7 +870,7 @@ function CDT_SummRedraw(now)
             for i = 1, n do
                 local e = list[i]
                 if e.ready then
-                    if readyCnt < CDT_SUMM_NM_ROWS then
+                    if readyCnt < 2 then
                         readyCnt = readyCnt + 1
                         readyNames[readyCnt] = e.name
                     end
@@ -642,11 +888,13 @@ function CDT_SummRedraw(now)
             if readyCnt > 0 then
                 txt[1] = readyNames[1] or ""
                 txt[2] = readyNames[2] or ""
+                txt[3] = ""
                 tr, tg, tb = 1, 0.88, 0.6
             elseif n == 0 then
-                txt[1] = ""; txt[2] = "---"
+                txt[1] = ""; txt[2] = "---"; txt[3] = ""
                 tr, tg, tb = 0.22, 0.22, 0.3
             else
+                txt[3] = ""
                 if soonest then
                     local rem = soonest - now
                     if rem < 0 then rem = 0 end
@@ -668,7 +916,7 @@ function CDT_SummRedraw(now)
                 end
             end
 
-            for r = 1, CDT_SUMM_NM_ROWS do
+            for r = 1, 3 do
                 local fs = sc.nm[r]
                 if ca.nm[r] ~= txt[r] then
                     ca.nm[r] = txt[r]
@@ -679,12 +927,532 @@ function CDT_SummRedraw(now)
                 ca.tr, ca.tg, ca.tb = tr, tg, tb
                 sc.nm[1]:SetTextColor(tr, tg, tb)
                 sc.nm[2]:SetTextColor(tr, tg, tb)
+                sc.nm[3]:SetTextColor(tr, tg, tb)
             end
 
             slot = slot + 1
+        end
+    end
+end
+
+-- ── PullCheck: polling ────────────────────────────────────────────────────────
+
+function PC_Poll()
+    if not CDT_DB.pullcheck then return end
+    local n = GetNumRaidMembers()
+    if not n or n == 0 then
+        PC_H_IN = 0; PC_H_TOT = 0; PC_M_IN = 0; PC_P_IN = 0; PC_P_TOT = 0
+        PC_DrawHeader()
+        return
+    end
+
+    local px, py, pz = UnitPosition("player")
+
+    local thresh   = CDT_DB.manaThresh / 100
+    local units    = CDT_RAID_UNITS
+    local range    = PC_RANGE * PC_RANGE
+    local hIn = 0; local hTot = 0; local mIn = 0; local pIn = 0
+
+    for i = 1, n do
+        local unit   = units[i]
+        local exists = UnitExists(unit)
+        if exists then
+            local name = UnitName(unit)
+            local inRange = false
+            if px then
+                local ux, uy, uz = UnitPosition(unit)
+                if ux then
+                    local dx = ux - px
+                    local dy = uy - py
+                    local dz = uz - pz
+                    if (dx*dx + dy*dy + dz*dz) <= range then
+                        inRange = true
+                    end
+                end
+            end
+
+            if inRange then pIn = pIn + 1 end
+
+            if name and PC_HEALERS[name] then
+                hTot = hTot + 1
+                if inRange then
+                    hIn = hIn + 1
+                    local mana    = UnitMana(unit)
+                    local manaMax = UnitManaMax(unit)
+                    if manaMax and manaMax > 0 then
+                        if (mana / manaMax) >= thresh then
+                            mIn = mIn + 1
+                        end
+                    end
+                end
             end
         end
     end
+
+    PC_P_TOT = n
+    PC_H_IN  = hIn
+    PC_H_TOT = hTot
+    PC_M_IN  = mIn
+    PC_P_IN  = pIn
+
+    PC_DrawHeader()
+end
+
+-- ── PullCheck: header redraw ──────────────────────────────────────────────────
+
+PC_LAST_HDR = ""
+
+function PC_DrawHeader()
+    if not PC_HDR_TXT then return end
+    local s = "H:" .. PC_H_IN .. "/" .. PC_H_TOT
+           .. "  M:" .. PC_M_IN .. "/" .. PC_H_IN
+           .. "  P:" .. PC_P_IN .. "/" .. PC_P_TOT
+    if s ~= PC_LAST_HDR then
+        PC_LAST_HDR = s
+        PC_HDR_TXT:SetText(s)
+    end
+end
+
+-- ── PullCheck: healer detection ───────────────────────────────────────────────
+
+function PC_OnCombatStart()
+    PC_IN_COMBAT = true
+    for k in pairs(PC_DETECT_COUNTS) do PC_DETECT_COUNTS[k] = nil end
+end
+
+function PC_OnCombatEnd()
+    PC_IN_COMBAT = false
+    local found = false
+    for name, count in pairs(PC_DETECT_COUNTS) do
+        if count >= 3 and not PC_HEALERS[name] then
+            local alreadyPending = false
+            for i = 1, PC_PENDING_N do
+                if PC_PENDING[i] == name then
+                    alreadyPending = true
+                    break
+                end
+            end
+            if not alreadyPending then
+                PC_PENDING_N = PC_PENDING_N + 1
+                PC_PENDING[PC_PENDING_N] = name
+                found = true
+            end
+        end
+    end
+
+    if found then
+        PC_DrawPrompts()
+    end
+
+    PC_Poll()
+end
+
+function PC_RecordHealCast(name)
+    if not PC_IN_COMBAT then return end
+    if PC_HEALERS[name] then return end
+    local c = PC_DETECT_COUNTS[name]
+    if c then
+        PC_DETECT_COUNTS[name] = c + 1
+    else
+        PC_DETECT_COUNTS[name] = 1
+    end
+end
+
+-- ── PullCheck: prompt rows ────────────────────────────────────────────────────
+
+function PC_DrawPrompts()
+    if not PC_FRAME then return end
+    for i = 1, PC_MAX_PROMPTS do
+        local row = PC_PROMPT_ROWS[i]
+        if i <= PC_PENDING_N then
+            row.lbl:SetText(PC_PENDING[i])
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    PC_ResizeFrame()
+end
+
+function PC_ConfirmHealer(name)
+    PC_HEALERS[name] = true
+    PC_HEALER_COUNT  = PC_HEALER_COUNT + 1
+    PC_RemovePending(name)
+    PC_Poll()
+end
+
+function PC_RejectHealer(name)
+    PC_RemovePending(name)
+end
+
+function PC_RemovePending(name)
+    local found = false
+    for i = 1, PC_PENDING_N do
+        if PC_PENDING[i] == name then
+            found = true
+        end
+        if found and i < PC_PENDING_N then
+            PC_PENDING[i] = PC_PENDING[i + 1]
+        end
+    end
+    if found then
+        PC_PENDING[PC_PENDING_N] = nil
+        PC_PENDING_N = PC_PENDING_N - 1
+        PC_DrawPrompts()
+    end
+end
+
+function PC_ClearHealers()
+    for k in pairs(PC_HEALERS) do PC_HEALERS[k] = nil end
+    PC_HEALER_COUNT = 0
+    PC_Poll()
+end
+
+-- ── PullCheck: frame sizing ───────────────────────────────────────────────────
+
+function PC_ResizeFrame()
+    if not PC_FRAME then return end
+    local h = PC_HDR_H + PC_PENDING_N * PC_BODY_H
+    if h < PC_HDR_H then h = PC_HDR_H end
+    PC_FRAME:SetHeight(h)
+end
+
+-- Resize PC_FRAME and all its fixed-width children to match the CDT panel width.
+-- Called from CDT_ResizeFrame / CDT_ApplyCollapsedSize whenever panel width changes.
+function PC_SyncWidth(w)
+    if not PC_FRAME then return end
+    PC_FRAME:SetWidth(w)
+    -- Resize the header sub-frame and prompt rows which were built at CDT_W
+    local hdr = getglobal("PCHdr")
+    if hdr then hdr:SetWidth(w) end
+    for i = 1, PC_MAX_PROMPTS do
+        local row = PC_PROMPT_ROWS[i]
+        if row then row:SetWidth(w) end
+    end
+end
+
+function PC_UpdateVisibility()
+    if not PC_FRAME then return end
+    if CDT_DB.pullcheck then
+        PC_FRAME:Show()
+    else
+        PC_FRAME:Hide()
+    end
+end
+
+-- ── PullCheck: mouseover tooltip ─────────────────────────────────────────────
+
+function PC_ShowMO()
+    if not PC_MO_FRAME then return end
+    if PC_HEALER_COUNT == 0 then PC_MO_FRAME:Hide(); return end
+
+    local px, py, pz = UnitPosition("player")
+    local range  = PC_RANGE * PC_RANGE
+    local thresh = CDT_DB.manaThresh / 100
+    local row    = 0
+
+    for k, _ in pairs(PC_HEALERS) do
+        local inRange = false
+        local manaPct = 0
+        local unit    = PC_NAME_TO_UNIT[k]
+        if unit and UnitExists(unit) then
+            if px then
+                local ux, uy, uz = UnitPosition(unit)
+                if ux then
+                    local dx = ux - px
+                    local dy = uy - py
+                    local dz = uz - pz
+                    if (dx*dx + dy*dy + dz*dz) <= range then
+                        inRange = true
+                    end
+                end
+            end
+            local mana    = UnitMana(unit)
+            local manaMax = UnitManaMax(unit)
+            if manaMax and manaMax > 0 then
+                manaPct = _floor((mana / manaMax) * 100)
+            end
+        end
+
+        row = row + 1
+        if row <= PC_MO_MAX then
+            local fs  = PC_MO_ROWS[row]
+            local txt = k .. "  " .. manaPct .. "%"
+            fs:SetText(txt)
+            if inRange then
+                fs:SetTextColor(1, 0.88, 0.6)
+                fs:SetAlpha(1)
+            else
+                fs:SetTextColor(0.5, 0.44, 0.3)
+                fs:SetAlpha(0.45)
+            end
+            fs:Show()
+        end
+    end
+    for i = row + 1, PC_MO_MAX do PC_MO_ROWS[i]:Hide() end
+
+    local tooltipH = 14 + row * 12 + 4
+    if tooltipH < 20 then tooltipH = 20 end
+    PC_MO_FRAME:SetHeight(tooltipH)
+    PC_MO_FRAME:Show()
+end
+
+function PC_HideMO()
+    if PC_MO_FRAME then PC_MO_FRAME:Hide() end
+end
+
+-- ── Build PullCheck UI ────────────────────────────────────────────────────────
+
+function PC_Build()
+    PC_FRAME = CreateFrame("Frame", "PCFrame", UIParent)
+    PC_FRAME:SetWidth(CDT_W)
+    PC_FRAME:SetHeight(PC_HDR_H)
+    PC_FRAME:SetPoint("TOPLEFT", CDT_FRAME, "BOTTOMLEFT", 0, -1)
+    PC_FRAME:EnableMouse(true)
+
+    local pcBg = PC_FRAME:CreateTexture(nil, "BACKGROUND")
+    pcBg:SetAllPoints(PC_FRAME)
+    pcBg:SetTexture(0.03, 0.05, 0.03, 0.88)
+
+    local hdr = CreateFrame("Frame", "PCHdr", PC_FRAME)
+    hdr:SetWidth(CDT_W); hdr:SetHeight(PC_HDR_H)
+    hdr:SetPoint("TOPLEFT", PC_FRAME, "TOPLEFT", 0, 0)
+    local hdrBg = hdr:CreateTexture(nil, "BACKGROUND")
+    hdrBg:SetAllPoints(hdr); hdrBg:SetTexture(0.08, 0.14, 0.08, 0.95)
+
+    local pullLbl = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pullLbl:SetPoint("LEFT", hdr, "LEFT", 4, 0)
+    pullLbl:SetTextColor(0.5, 0.8, 0.5)
+    pullLbl:SetText("Pull")
+
+    PC_HDR_TXT = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    PC_HDR_TXT:SetPoint("LEFT", hdr, "LEFT", 30, 0)
+    PC_HDR_TXT:SetTextColor(0.88, 0.88, 0.7)
+    PC_HDR_TXT:SetText("H:0/0  M:0/0  P:0/0")
+
+    local clrBtn = CreateFrame("Button", "PCClrBtn", hdr)
+    clrBtn:SetWidth(16); clrBtn:SetHeight(11)
+    clrBtn:SetPoint("TOPRIGHT", hdr, "TOPRIGHT", -2, -2)
+    local clrBg = clrBtn:CreateTexture(nil, "BACKGROUND")
+    clrBg:SetAllPoints(clrBtn); clrBg:SetTexture(0.3, 0.1, 0.1, 0.9)
+    local clrTxt = clrBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    clrTxt:SetAllPoints(clrBtn); clrTxt:SetText("[C]"); clrTxt:SetTextColor(1, 0.4, 0.4)
+    clrBtn:SetScript("OnClick", function()
+        if PC_CLR_FRAME:IsVisible() then PC_CLR_FRAME:Hide()
+        else
+            PC_CLR_FRAME:ClearAllPoints()
+            PC_CLR_FRAME:SetPoint("TOP", PC_FRAME, "BOTTOM", 0, -2)
+            PC_CLR_FRAME:Show()
+        end
+    end)
+
+    PC_FRAME:SetScript("OnEnter", function()
+        PC_Poll()
+        PC_ShowMO()
+    end)
+    PC_FRAME:SetScript("OnLeave", function()
+        PC_HideMO()
+    end)
+
+    for i = 1, PC_MAX_PROMPTS do
+        local row = CreateFrame("Frame", "PCPrompt_"..i, PC_FRAME)
+        row:SetWidth(CDT_W); row:SetHeight(PC_BODY_H)
+        row:SetPoint("TOPLEFT", PC_FRAME, "TOPLEFT", 0, -(PC_HDR_H + (i-1)*PC_BODY_H))
+
+        local rowBg = row:CreateTexture(nil, "BACKGROUND")
+        rowBg:SetAllPoints(row); rowBg:SetTexture(0.06, 0.1, 0.06, 0.9)
+
+        local detLbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        detLbl:SetPoint("LEFT", row, "LEFT", 4, 0)
+        detLbl:SetTextColor(0.6, 0.6, 0.6)
+        detLbl:SetText("Healer detected:")
+        detLbl:SetWidth(80); detLbl:SetJustifyH("LEFT")
+
+        local nmLbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        nmLbl:SetPoint("LEFT", row, "LEFT", 86, 0)
+        nmLbl:SetTextColor(1, 0.88, 0.6)
+        nmLbl:SetWidth(80); nmLbl:SetJustifyH("LEFT")
+        row.lbl = nmLbl
+
+        local yBtn = CreateFrame("Button", "PCYBtn_"..i, row)
+        yBtn:SetWidth(16); yBtn:SetHeight(11)
+        yBtn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -20, -1)
+        local yBg = yBtn:CreateTexture(nil, "BACKGROUND")
+        yBg:SetAllPoints(yBtn); yBg:SetTexture(0.1, 0.4, 0.1, 0.9)
+        local yTxt = yBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        yTxt:SetAllPoints(yBtn); yTxt:SetText("Y"); yTxt:SetTextColor(0.3, 1, 0.3)
+        local captureRow = i
+        yBtn:SetScript("OnClick", function()
+            local name = PC_PENDING[captureRow]
+            if name then PC_ConfirmHealer(name) end
+        end)
+
+        local nBtn = CreateFrame("Button", "PCNBtn_"..i, row)
+        nBtn:SetWidth(16); nBtn:SetHeight(11)
+        nBtn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, -1)
+        local nBg = nBtn:CreateTexture(nil, "BACKGROUND")
+        nBg:SetAllPoints(nBtn); nBg:SetTexture(0.4, 0.1, 0.1, 0.9)
+        local nTxt = nBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        nTxt:SetAllPoints(nBtn); nTxt:SetText("N"); nTxt:SetTextColor(1, 0.3, 0.3)
+        nBtn:SetScript("OnClick", function()
+            local name = PC_PENDING[captureRow]
+            if name then PC_RejectHealer(name) end
+        end)
+
+        row:Hide()
+        PC_PROMPT_ROWS[i] = row
+    end
+
+    PC_MO_FRAME = CreateFrame("Frame", "PCMOFrame", UIParent)
+    PC_MO_FRAME:SetWidth(120)
+    PC_MO_FRAME:SetHeight(20)
+    PC_MO_FRAME:SetFrameStrata("TOOLTIP")
+    PC_MO_FRAME:SetPoint("TOPLEFT", PC_FRAME, "TOPRIGHT", 4, 0)
+    PC_MO_FRAME:EnableMouse(false)
+    PC_MO_FRAME:Hide()
+
+    local moBg = PC_MO_FRAME:CreateTexture(nil, "BACKGROUND")
+    moBg:SetAllPoints(PC_MO_FRAME); moBg:SetTexture(0.04, 0.06, 0.04, 0.95)
+
+    local moTitle = PC_MO_FRAME:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    moTitle:SetPoint("TOPLEFT", PC_MO_FRAME, "TOPLEFT", 4, -3)
+    moTitle:SetTextColor(0.5, 0.8, 0.5); moTitle:SetText("Healers")
+
+    for i = 1, PC_MO_MAX do
+        local fs = PC_MO_FRAME:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPLEFT", PC_MO_FRAME, "TOPLEFT", 4, -(14 + (i-1)*12))
+        fs:SetWidth(112); fs:SetJustifyH("LEFT")
+        fs:Hide()
+        PC_MO_ROWS[i] = fs
+    end
+
+    PC_CLR_FRAME = CreateFrame("Frame", "PCClrFrame", UIParent)
+    PC_CLR_FRAME:SetWidth(140); PC_CLR_FRAME:SetHeight(44)
+    PC_CLR_FRAME:SetFrameStrata("TOOLTIP"); PC_CLR_FRAME:EnableMouse(true)
+    PC_CLR_FRAME:Hide()
+
+    local clrFBg = PC_CLR_FRAME:CreateTexture(nil, "BACKGROUND")
+    clrFBg:SetAllPoints(PC_CLR_FRAME); clrFBg:SetTexture(0.08, 0.04, 0.04, 0.97)
+    local clrFLbl = PC_CLR_FRAME:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    clrFLbl:SetPoint("TOP", PC_CLR_FRAME, "TOP", 0, -8)
+    clrFLbl:SetTextColor(1, 0.7, 0.7); clrFLbl:SetText("Clear healer list?")
+
+    local cfYBtn = CreateFrame("Button", "PCClrYBtn", PC_CLR_FRAME)
+    cfYBtn:SetWidth(40); cfYBtn:SetHeight(14)
+    cfYBtn:SetPoint("BOTTOMLEFT", PC_CLR_FRAME, "BOTTOMLEFT", 8, 6)
+    local cfYBg = cfYBtn:CreateTexture(nil, "BACKGROUND")
+    cfYBg:SetAllPoints(cfYBtn); cfYBg:SetTexture(0.1, 0.4, 0.1, 0.9)
+    local cfYTxt = cfYBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cfYTxt:SetAllPoints(cfYBtn); cfYTxt:SetText("Y"); cfYTxt:SetTextColor(0.3, 1, 0.3)
+    cfYBtn:SetScript("OnClick", function()
+        PC_ClearHealers()
+        PC_CLR_FRAME:Hide()
+        DEFAULT_CHAT_FRAME:AddMessage("|cff55cc55[PullCheck]|r Healer list cleared.")
+    end)
+
+    local cfNBtn = CreateFrame("Button", "PCClrNBtn", PC_CLR_FRAME)
+    cfNBtn:SetWidth(40); cfNBtn:SetHeight(14)
+    cfNBtn:SetPoint("BOTTOMRIGHT", PC_CLR_FRAME, "BOTTOMRIGHT", -8, 6)
+    local cfNBg = cfNBtn:CreateTexture(nil, "BACKGROUND")
+    cfNBg:SetAllPoints(cfNBtn); cfNBg:SetTexture(0.3, 0.1, 0.1, 0.9)
+    local cfNTxt = cfNBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cfNTxt:SetAllPoints(cfNBtn); cfNTxt:SetText("N"); cfNTxt:SetTextColor(1, 0.3, 0.3)
+    cfNBtn:SetScript("OnClick", function() PC_CLR_FRAME:Hide() end)
+
+    PC_UpdateVisibility()
+    PC_DrawHeader()
+end
+
+-- ── Summary mouseover tooltip ─────────────────────────────────────────────────
+-- Shared tooltip frame shown when hovering an icon in summary mode.
+-- Shows the spell label + all tracked entries with their timers.
+
+function CDT_SummTT_Show(iconFrame, spellIdx)
+    if not CDT_SUMM_TT then return end
+    local def  = CDT_SPELL_DEFS[spellIdx]
+    local list = CDT_BY_KEY[def.key]
+    local n    = _getn(list)
+    local now  = _GetTime()
+    local secStr = CDT_SEC_STR
+
+    -- Row 1: spell label (header)
+    CDT_SUMM_TT_ROWS[1]:SetText(def.label)
+    CDT_SUMM_TT_ROWS[1]:SetTextColor(
+        0.55 + def.cr*0.45, 0.55 + def.cg*0.45, 0.55 + def.cb*0.45)
+    CDT_SUMM_TT_ROWS[1]:Show()
+
+    local rowCount = 1
+
+    if n == 0 then
+        rowCount = rowCount + 1
+        local fs = CDT_SUMM_TT_ROWS[rowCount]
+        fs:SetText("  No casts yet")
+        fs:SetTextColor(0.45, 0.45, 0.45)
+        fs:Show()
+    else
+        for i = 1, n do
+            local e = list[i]
+            rowCount = rowCount + 1
+            if rowCount > CDT_SUMM_TT_MAX then break end
+            local fs = CDT_SUMM_TT_ROWS[rowCount]
+
+            local tmTxt, tr, tg, tb
+            if e.ready then
+                tmTxt = "READY"
+                tr, tg, tb = 0.2, 1, 0.2
+            else
+                local rem = e.expireAt - now
+                if rem < 0 then rem = 0 end
+                local m = _floor(rem / 60)
+                local s = _floor(_mod(rem, 60))
+                tmTxt = m .. secStr[s]
+                local frac = rem / e.cd
+                if frac > 0.5 then      tr, tg, tb = 1, 0.2, 0.2
+                elseif frac > 0.2 then  tr, tg, tb = 1, 0.6, 0.1
+                else                    tr, tg, tb = 0.8, 0.8, 0.2 end
+            end
+            fs:SetText("  " .. e.displayName .. " — " .. tmTxt)
+            fs:SetTextColor(tr, tg, tb)
+            fs:Show()
+        end
+    end
+
+    -- Hide unused rows
+    for i = rowCount + 1, CDT_SUMM_TT_MAX do CDT_SUMM_TT_ROWS[i]:Hide() end
+
+    local ttH = rowCount * 13 + 6
+    CDT_SUMM_TT:SetHeight(ttH)
+    CDT_SUMM_TT:ClearAllPoints()
+    CDT_SUMM_TT:SetPoint("TOPLEFT", iconFrame, "TOPRIGHT", 4, 0)
+    CDT_SUMM_TT:Show()
+end
+
+function CDT_SummTT_Hide()
+    if CDT_SUMM_TT then CDT_SUMM_TT:Hide() end
+end
+
+function CDT_BuildSummTT()
+    local f = CreateFrame("Frame", "CDTSummTT", UIParent)
+    f:SetWidth(130)
+    f:SetHeight(20)
+    f:SetFrameStrata("TOOLTIP")
+    f:EnableMouse(false)
+    f:Hide()
+
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(f)
+    bg:SetTexture(0.04, 0.04, 0.08, 0.95)
+
+    for i = 1, CDT_SUMM_TT_MAX do
+        local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -(3 + (i-1)*13))
+        fs:SetWidth(122)
+        fs:SetJustifyH("LEFT")
+        fs:Hide()
+        CDT_SUMM_TT_ROWS[i] = fs
+    end
+
+    CDT_SUMM_TT = f
 end
 
 -- ── Build main UI ─────────────────────────────────────────────────────────────
@@ -713,7 +1481,6 @@ function CDT_Build()
     CDT_FRAME:SetScript("OnDragStart", function() CDT_FRAME:StartMoving() end)
     CDT_FRAME:SetScript("OnDragStop", function()
         CDT_FRAME:StopMovingOrSizing()
-        -- FIX 3: recompute center-relative offsets from the new TOPLEFT position
         local uiScale = UIParent:GetScale()
         local screenW = GetScreenWidth()  * uiScale
         local screenH = GetScreenHeight() * uiScale
@@ -730,12 +1497,16 @@ function CDT_Build()
     CDT_FRAME:SetScript("OnLeave", function()
         if CDT_DB.showMode == "mouseover" then
             CDT_MOUSEOVER = false
+            -- Don't collapse here — the ticker handles it.
+            -- Collapsing immediately causes flicker when moving between
+            -- the title bar and the body, since OnLeave fires on the parent
+            -- before OnEnter fires on the child.
         end
     end)
 
-    local mainBg = CDT_FRAME:CreateTexture(nil, "BACKGROUND")
-    mainBg:SetAllPoints(CDT_FRAME)
-    mainBg:SetTexture(0, 0, 0, 0.8)
+    CDT_MAIN_BG = CDT_FRAME:CreateTexture(nil, "BACKGROUND")
+    CDT_MAIN_BG:SetAllPoints(CDT_FRAME)
+    CDT_MAIN_BG:SetTexture(0, 0, 0, CDT_DB.bgAlpha / 100)
 
     -- ── Header ──
     -- FIX 2: store reference in CDT_HDR_FRAME so we can resize it for vertical mode
@@ -750,7 +1521,6 @@ function CDT_Build()
     local hTxt = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hTxt:SetPoint("LEFT", hdr, "LEFT", 5, 0)
     hTxt:SetText("|cffaabbff[CDT]|r CoolDown Tracker")
-    CDT_HDR_TXT = hTxt
 
     local clrBtn = CreateFrame("Button", "CDTClrBtn", hdr)
     clrBtn:SetWidth(26); clrBtn:SetHeight(11)
@@ -776,36 +1546,47 @@ function CDT_Build()
         else CDT_CFG_UpdateButtons(); CDT_CFG_FRAME:Show() end
     end)
 
-    -- FIX 2: store button references for hide/show in vertical mode
-    CDT_HDR_BTNS = { clrBtn, cfgBtn }
-
     -- ── Detail body ──
     CDT_BODY = CreateFrame("Frame", "CDTBody", CDT_FRAME)
     CDT_BODY:SetWidth(CDT_W)
     CDT_BODY:SetHeight(10)
     CDT_BODY:EnableMouse(true)
     CDT_BODY:SetScript("OnEnter", function()
-        if CDT_DB.showMode == "mouseover" then CDT_MOUSEOVER = true end
+        if CDT_DB.showMode == "mouseover" then
+            CDT_MOUSEOVER = true
+        end
     end)
     CDT_BODY:SetScript("OnLeave", function()
-        if CDT_DB.showMode == "mouseover" then CDT_MOUSEOVER = false end
+        if CDT_DB.showMode == "mouseover" then
+            CDT_MOUSEOVER = false
+        end
     end)
-    -- FIX 3: anchor set via CDT_RebuildBodyAnchor() after this block
-    local bodyBg = CDT_BODY:CreateTexture(nil, "BACKGROUND")
-    bodyBg:SetAllPoints(CDT_BODY)
-    bodyBg:SetTexture(0.02, 0.02, 0.04, 0.85)
+    CDT_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
+    CDT_BODY_BG = CDT_BODY:CreateTexture(nil, "BACKGROUND")
+    CDT_BODY_BG:SetAllPoints(CDT_BODY)
+    CDT_BODY_BG:SetTexture(0.02, 0.02, 0.04, CDT_DB.bgAlpha / 100 * 1.06)
 
     -- ── Summary body ──
     CDT_SUMM_BODY = CreateFrame("Frame", "CDTSummBody", CDT_FRAME)
     CDT_SUMM_BODY:SetWidth(CDT_W)
-    CDT_SUMM_BODY:SetHeight(CDT_SummBodyH())
+    CDT_SUMM_BODY:SetHeight(CDT_SUMM_BODY_H_1)
+    CDT_SUMM_BODY:EnableMouse(true)
+    CDT_SUMM_BODY:SetScript("OnEnter", function()
+        if CDT_DB.showMode == "mouseover" then
+            CDT_MOUSEOVER = true
+        end
+    end)
+    CDT_SUMM_BODY:SetScript("OnLeave", function()
+        if CDT_DB.showMode == "mouseover" then
+            CDT_MOUSEOVER = false
+        end
+    end)
     CDT_SUMM_BODY:Hide()
-    local summBg = CDT_SUMM_BODY:CreateTexture(nil, "BACKGROUND")
-    summBg:SetAllPoints(CDT_SUMM_BODY)
-    summBg:SetTexture(0.02, 0.02, 0.04, 0.85)
+    CDT_SUMM_BG = CDT_SUMM_BODY:CreateTexture(nil, "BACKGROUND")
+    CDT_SUMM_BG:SetAllPoints(CDT_SUMM_BODY)
+    CDT_SUMM_BG:SetTexture(0.02, 0.02, 0.04, CDT_DB.bgAlpha / 100 * 1.06)
 
-    -- FIX 3 + FIX 2: set body anchors based on current mode
-    CDT_RebuildBodyAnchor()
+    CDT_SUMM_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
 
     -- ── Preallocate detail rows ──
     local defs      = CDT_SPELL_DEFS
@@ -852,6 +1633,7 @@ function CDT_Build()
                 cz:SetWidth(CDT_LBL_X + 2 + CDT_LBL_W); cz:SetHeight(CDT_ROW_H)
                 cz:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
                 cz:SetFrameLevel(row:GetFrameLevel() + 1)
+                cz:EnableMouse(true)
                 cz:RegisterForClicks("LeftButtonUp")
                 cz:SetScript("OnClick", function()
                     if IsShiftKeyDown() then CDT_AnnounceReady(spellKey, spellLabel) end
@@ -904,6 +1686,9 @@ function CDT_Build()
         iconStripe:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", 0, 0)
         iconStripe:SetTexture(def.cr, def.cg, def.cb, 0.9)
 
+        iconFrame:Hide()
+
+        -- Summary mouseover: show spell tooltip on hover
         do
             local captureIdx = si
             iconFrame:EnableMouse(true)
@@ -915,10 +1700,8 @@ function CDT_Build()
             end)
         end
 
-        iconFrame:Hide()
-
         local nmFs = {}
-        for r = 1, CDT_SUMM_NM_ROWS do
+        for r = 1, 3 do
             local fs = CDT_SUMM_BODY:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             fs:SetWidth(colW)
             fs:SetHeight(nmH)
@@ -930,7 +1713,7 @@ function CDT_Build()
 
         CDT_SUMM_COLS[si]  = { iconFrame=iconFrame, nm=nmFs }
         CDT_SUMM_CACHE[si] = {
-            nm     = { "", "" },
+            nm     = { "", "", "" },
             tr=-1, tg=-1, tb=-1,
             visible=false,
             xOff   = nil,
@@ -941,30 +1724,56 @@ function CDT_Build()
     -- ── Ticker ──
     local tick    = CreateFrame("Frame", "CDTTick", UIParent)
     local acc     = 0
+    local pcAcc   = 0
+    local moAcc   = 0
     tick:SetScript("OnUpdate", function()
         acc   = acc   + arg1
+        pcAcc = pcAcc + arg1
+        moAcc = moAcc + arg1
+
+        -- Fast mouseover check (0.3s) — collapse when cursor leaves all panel frames
+        if moAcc >= 0.3 then
+            moAcc = 0
+            if CDT_MODE_MO and CDT_BODY_VISIBLE then
+                if CDT_MO_PINNED and _GetTime() >= CDT_MO_PIN_UNTIL then
+                    CDT_MO_PINNED = false
+                end
+                local over = MouseIsOver(CDT_FRAME)
+                           or MouseIsOver(CDT_BODY)
+                           or MouseIsOver(CDT_SUMM_BODY)
+                if over then
+                    CDT_MOUSEOVER = true
+                elseif not CDT_MO_PINNED then
+                    CDT_MOUSEOVER = false
+                    CDT_SetBodyVisible(false)
+                end
+            end
+        end
 
         if acc >= 2 then
             acc = 0
             if CDT_MODE_RAID then
                 if GetNumRaidMembers() > 0 then CDT_FRAME:Show() else CDT_FRAME:Hide() end
             end
-            if CDT_MO_PINNED and _GetTime() >= CDT_MO_PIN_UNTIL then
-                CDT_MO_PINNED = false
-                if CDT_MODE_MO and not CDT_MOUSEOVER then CDT_SetBodyVisible(false) end
-            end
-            if CDT_MODE_MO and (not CDT_MOUSEOVER) and (not CDT_MO_PINNED) and CDT_BODY_VISIBLE then
-                CDT_SetBodyVisible(false)
-            end
             CDT_Redraw()
+        end
+
+        if pcAcc >= 5 then
+            pcAcc = 0
+            if CDT_DB.pullcheck and not PC_IN_COMBAT then
+                if GetNumRaidMembers() > 0 then
+                    PC_Poll()
+                end
+            end
         end
     end)
 
     CDT_READY = true
     CDT_BuildConfirm()
     CDT_BuildConfig()
-    -- FIX 2: apply header layout for current mode (handles vertical strip correctly)
-    CDT_ApplyHeaderLayout()
+    CDT_BuildSummTT()
+    PC_Build()
+    CDT_LAST_W = -1
     CDT_UpdateVisibility()
     CDT_Redraw()
 end
@@ -999,7 +1808,6 @@ function CDT_BuildConfirm()
             for j = 1, n do list[j] = nil end
             list.dirty = false
         end
-        CDT_HAS_ACTIVE   = false
         CDT_LAYOUT_DIRTY = true
         CDT_Redraw(); f:Hide()
     end)
@@ -1026,7 +1834,7 @@ end
 
 function CDT_BuildConfig()
     local spellCount = _getn(CDT_SPELL_DEFS)
-    local cfgH = 230 + spellCount * 14 + 28
+    local cfgH = 170 + spellCount * 14 + 46 + 76
     local f = CreateFrame("Frame", "CDTConfigFrame", UIParent)
     f:SetWidth(210); f:SetHeight(cfgH)
     f:SetPoint("TOPLEFT", CDT_FRAME, "TOPRIGHT", 4, 0)
@@ -1079,9 +1887,6 @@ function CDT_BuildConfig()
             CDT_DB.showMode = m
             CDT_SyncModeFlags()
             CDT_CFG_UpdateButtons()
-            -- FIX 2: update header layout and body anchors when mode changes
-            CDT_ApplyHeaderLayout()
-            CDT_RebuildBodyAnchor()
             CDT_LAST_H = -1; CDT_LAST_W = -1
             CDT_UpdateVisibility()
         end)
@@ -1103,166 +1908,87 @@ function CDT_BuildConfig()
     descMO:SetTextColor(0.45, 0.45, 0.55); descMO:SetWidth(198)
     descMO:SetJustifyH("LEFT"); descMO:SetText("mouseover: collapse to titlebar")
 
-    -- ── Summary grid layout ──
-    MakeDivider(-129)
-    local gridLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gridLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -134)
-    gridLbl:SetTextColor(0.8, 0.8, 1); gridLbl:SetText("Summary grid (fixed):")
+    -- ── View mode ──
+    MakeDivider(-85)
+    local viewLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    viewLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -90)
+    viewLbl:SetTextColor(0.8, 0.8, 1); viewLbl:SetText("View:")
 
-    local rowLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -148)
-    rowLbl:SetTextColor(0.7, 0.7, 0.9); rowLbl:SetText("Rows")
-    local rowEb = CreateFrame("EditBox", "CDTSummRowsEB", f, "InputBoxTemplate")
-    rowEb:SetWidth(34); rowEb:SetHeight(16)
-    rowEb:SetPoint("TOPLEFT", f, "TOPLEFT", 48, -149)
-    rowEb:SetAutoFocus(false)
-    rowEb:SetNumeric(true)
-    rowEb:SetMaxLetters(2)
-    rowEb:SetScript("OnEscapePressed", function() rowEb:ClearFocus(); CDT_CFG_UpdateButtons() end)
-    rowEb:SetScript("OnEnterPressed", function()
-        local v = tonumber(rowEb:GetText()) or 2
-        if v < CDT_SUMM_MIN_ROWS then v = CDT_SUMM_MIN_ROWS end
-        if v > CDT_SUMM_MAX_ROWS then v = CDT_SUMM_MAX_ROWS end
-        CDT_DB.summRows = v
-        rowEb:ClearFocus()
-        CDT_LAST_H = -1; CDT_LAST_W = -1
-        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
-    end)
-    rowEb:SetScript("OnEditFocusLost", function()
-        local v = tonumber(rowEb:GetText())
-        if v then
-            if v < CDT_SUMM_MIN_ROWS then v = CDT_SUMM_MIN_ROWS end
-            if v > CDT_SUMM_MAX_ROWS then v = CDT_SUMM_MAX_ROWS end
-            CDT_DB.summRows = v
+    local viewOpts = CDT_VIEW_OPTS
+    for idx = 1, _getn(viewOpts) do
+        local mode = viewOpts[idx]
+        local btn = CreateFrame("Button", "CDTViewBtn"..idx, f)
+        btn:SetWidth(56); btn:SetHeight(14)
+        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*62, -103)
+        local bbg = btn:CreateTexture(nil, "BACKGROUND")
+        bbg:SetAllPoints(btn); bbg:SetTexture(0.15, 0.15, 0.3, 0.9)
+        btn.bg = bbg
+        local btxt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btxt:SetAllPoints(btn); btxt:SetText(mode); btn.txt = btxt
+        local m = mode
+        btn:SetScript("OnClick", function()
+            CDT_DB.viewMode = m
+            CDT_SyncModeFlags()
+            CDT_CFG_UpdateButtons()
             CDT_LAST_H = -1; CDT_LAST_W = -1
-            CDT_ResizeFrame(); CDT_Redraw()
-        end
-        CDT_CFG_UpdateButtons()
-    end)
-    CDT_CFG_SUMM_ROWS_EB = rowEb
+            if CDT_BODY_VISIBLE then
+                if CDT_MODE_SUMM then
+                    CDT_BODY:Hide(); CDT_SUMM_BODY:Show()
+                else
+                    CDT_SUMM_BODY:Hide(); CDT_BODY:Show()
+                end
+            end
+            CDT_Redraw()
+        end)
+        CDT_CFG_VIEW_BTNS[idx] = btn
+    end
 
-    local colLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    colLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 104, -148)
-    colLbl:SetTextColor(0.7, 0.7, 0.9); colLbl:SetText("Cols")
-    local colEb = CreateFrame("EditBox", "CDTSummColsEB", f, "InputBoxTemplate")
-    colEb:SetWidth(34); colEb:SetHeight(16)
-    colEb:SetPoint("TOPLEFT", f, "TOPLEFT", 142, -149)
-    colEb:SetAutoFocus(false)
-    colEb:SetNumeric(true)
-    colEb:SetMaxLetters(2)
-    colEb:SetScript("OnEscapePressed", function() colEb:ClearFocus(); CDT_CFG_UpdateButtons() end)
-    colEb:SetScript("OnEnterPressed", function()
-        local v = tonumber(colEb:GetText()) or 5
-        if v < CDT_SUMM_MIN_COLS then v = CDT_SUMM_MIN_COLS end
-        if v > CDT_SUMM_MAX_COLS then v = CDT_SUMM_MAX_COLS end
-        CDT_DB.summCols = v
-        colEb:ClearFocus()
-        CDT_LAST_H = -1; CDT_LAST_W = -1
-        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
-    end)
-    colEb:SetScript("OnEditFocusLost", function()
-        local v = tonumber(colEb:GetText())
-        if v then
-            if v < CDT_SUMM_MIN_COLS then v = CDT_SUMM_MIN_COLS end
-            if v > CDT_SUMM_MAX_COLS then v = CDT_SUMM_MAX_COLS end
-            CDT_DB.summCols = v
-            CDT_LAST_H = -1; CDT_LAST_W = -1
-            CDT_ResizeFrame(); CDT_Redraw()
-        end
-        CDT_CFG_UpdateButtons()
-    end)
-    CDT_CFG_SUMM_COLS_EB = colEb
+    -- ── Ready mode ──
+    MakeDivider(-115)
+    local readyLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    readyLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -120)
+    readyLbl:SetTextColor(0.8, 0.8, 1); readyLbl:SetText("Ready:")
 
-    local gridDesc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gridDesc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -161)
-    gridDesc:SetTextColor(0.45, 0.45, 0.55); gridDesc:SetWidth(194)
-    gridDesc:SetJustifyH("LEFT"); gridDesc:SetText("Set fixed rows/cols. Overflow spells are hidden.")
+    local readyOpts = CDT_READY_OPTS
+    for idx = 1, _getn(readyOpts) do
+        local mode = readyOpts[idx]
+        local btn = CreateFrame("Button", "CDTReadyBtn"..idx, f)
+        btn:SetWidth(56); btn:SetHeight(14)
+        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*62, -133)
+        local bbg = btn:CreateTexture(nil, "BACKGROUND")
+        bbg:SetAllPoints(btn); bbg:SetTexture(0.15, 0.15, 0.3, 0.9)
+        btn.bg = bbg
+        local btxt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btxt:SetAllPoints(btn); btxt:SetText(mode); btn.txt = btxt
+        local m = mode
+        btn:SetScript("OnClick", function()
+            CDT_DB.readyMode = m
+            CDT_SyncModeFlags()
+            CDT_CFG_UpdateButtons()
+        end)
+        CDT_CFG_READY_BTNS[idx] = btn
+    end
 
-    -- ── Summary grid layout ──
-    MakeDivider(-129)
-    local gridLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gridLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -134)
-    gridLbl:SetTextColor(0.8, 0.8, 1); gridLbl:SetText("Summary grid (fixed):")
+    local descOn = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    descOn:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -147)
+    descOn:SetTextColor(0.45, 0.45, 0.55); descOn:SetWidth(198)
+    descOn:SetJustifyH("LEFT"); descOn:SetText("on: keep row with READY text")
 
-    local rowLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -148)
-    rowLbl:SetTextColor(0.7, 0.7, 0.9); rowLbl:SetText("Rows")
-
-    local rowMinus = CreateFrame("Button", "CDTSummRowsMinus", f)
-    rowMinus:SetWidth(16); rowMinus:SetHeight(14)
-    rowMinus:SetPoint("TOPLEFT", f, "TOPLEFT", 48, -148)
-    rowMinus:SetScript("OnClick", function()
-        CDT_DB.summRows = CDT_DB.summRows - 1
-        if CDT_DB.summRows < CDT_SUMM_MIN_ROWS then CDT_DB.summRows = CDT_SUMM_MIN_ROWS end
-        CDT_LAST_H = -1; CDT_LAST_W = -1
-        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
-    end)
-    local rowMinusTxt = rowMinus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowMinusTxt:SetAllPoints(rowMinus); rowMinusTxt:SetText("-")
-
-    local rowPlus = CreateFrame("Button", "CDTSummRowsPlus", f)
-    rowPlus:SetWidth(16); rowPlus:SetHeight(14)
-    rowPlus:SetPoint("TOPLEFT", f, "TOPLEFT", 94, -148)
-    rowPlus:SetScript("OnClick", function()
-        CDT_DB.summRows = CDT_DB.summRows + 1
-        if CDT_DB.summRows > CDT_SUMM_MAX_ROWS then CDT_DB.summRows = CDT_SUMM_MAX_ROWS end
-        CDT_LAST_H = -1; CDT_LAST_W = -1
-        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
-    end)
-    local rowPlusTxt = rowPlus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowPlusTxt:SetAllPoints(rowPlus); rowPlusTxt:SetText("+")
-
-    CDT_CFG_SUMM_ROWS_TXT = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    CDT_CFG_SUMM_ROWS_TXT:SetPoint("TOPLEFT", f, "TOPLEFT", 69, -148)
-    CDT_CFG_SUMM_ROWS_TXT:SetTextColor(0.9, 0.9, 0.9)
-
-    local colLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    colLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 126, -148)
-    colLbl:SetTextColor(0.7, 0.7, 0.9); colLbl:SetText("Cols")
-
-    local colMinus = CreateFrame("Button", "CDTSummColsMinus", f)
-    colMinus:SetWidth(16); colMinus:SetHeight(14)
-    colMinus:SetPoint("TOPLEFT", f, "TOPLEFT", 166, -148)
-    colMinus:SetScript("OnClick", function()
-        CDT_DB.summCols = CDT_DB.summCols - 1
-        if CDT_DB.summCols < CDT_SUMM_MIN_COLS then CDT_DB.summCols = CDT_SUMM_MIN_COLS end
-        CDT_LAST_H = -1; CDT_LAST_W = -1
-        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
-    end)
-    local colMinusTxt = colMinus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    colMinusTxt:SetAllPoints(colMinus); colMinusTxt:SetText("-")
-
-    local colPlus = CreateFrame("Button", "CDTSummColsPlus", f)
-    colPlus:SetWidth(16); colPlus:SetHeight(14)
-    colPlus:SetPoint("TOPLEFT", f, "TOPLEFT", 192, -148)
-    colPlus:SetScript("OnClick", function()
-        CDT_DB.summCols = CDT_DB.summCols + 1
-        if CDT_DB.summCols > CDT_SUMM_MAX_COLS then CDT_DB.summCols = CDT_SUMM_MAX_COLS end
-        CDT_LAST_H = -1; CDT_LAST_W = -1
-        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
-    end)
-    local colPlusTxt = colPlus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    colPlusTxt:SetAllPoints(colPlus); colPlusTxt:SetText("+")
-
-    CDT_CFG_SUMM_COLS_TXT = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    CDT_CFG_SUMM_COLS_TXT:SetPoint("TOPLEFT", f, "TOPLEFT", 184, -148)
-    CDT_CFG_SUMM_COLS_TXT:SetTextColor(0.9, 0.9, 0.9)
-
-    local gridDesc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gridDesc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -161)
-    gridDesc:SetTextColor(0.45, 0.45, 0.55); gridDesc:SetWidth(194)
-    gridDesc:SetJustifyH("LEFT"); gridDesc:SetText("Disabled spells no longer resize the summary panel.")
+    local descOff = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    descOff:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -157)
+    descOff:SetTextColor(0.45, 0.45, 0.55); descOff:SetWidth(198)
+    descOff:SetJustifyH("LEFT"); descOff:SetText("off: remove row 10s after READY")
 
     -- ── Spell filter ──
-    MakeDivider(-173)
+    MakeDivider(-169)
     local spellsLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    spellsLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -178)
+    spellsLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -174)
     spellsLbl:SetTextColor(0.8, 0.8, 1); spellsLbl:SetText("Track spells:")
 
     CDT_CFG_SPELL_CHKS = {}
     for i = 1, spellCount do
         local def  = CDT_SPELL_DEFS[i]
-        local yOff = -178 - 4 - i * 14
+        local yOff = -174 - 4 - i * 14
 
         local box = CreateFrame("Frame", "CDTSpellBox"..i, f)
         box:SetWidth(10); box:SetHeight(10)
@@ -1284,7 +2010,7 @@ function CDT_BuildConfig()
         btn:SetScript("OnClick", function()
             CDT_DB.spells[k] = (CDT_DB.spells[k] == false) and true or false
             CDT_CFG_UpdateButtons()
-            if CDT_BODY_VISIBLE then
+            if CDT_MODE_SUMM and CDT_BODY_VISIBLE then
                 CDT_LAST_W = -1
                 CDT_ResizeFrame()
                 CDT_Redraw()
@@ -1294,29 +2020,126 @@ function CDT_BuildConfig()
         CDT_CFG_SPELL_CHKS[i] = { box=box, lbl=lbl, key=def.key }
     end
 
-    -- Star disclaimer
-    local starY = -178 - 4 - spellCount * 14 - 6
+    -- Star disclaimer — needs extra gap because last spell row is 14px tall
+    -- and the text itself wraps to ~2 lines (28px)
+    local starY = -174 - 4 - spellCount * 14 - 18
     local starDisc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     starDisc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, starY)
     starDisc:SetTextColor(0.55, 0.52, 0.28)
-    starDisc:SetWidth(194); starDisc:SetJustifyH("LEFT")
+    starDisc:SetWidth(194); starDisc:SetHeight(28); starDisc:SetJustifyH("LEFT")
     starDisc:SetText("* cooldown may be reduced by talents or set bonuses — timer is approximate")
 
+    -- ── PullCheck section ──
+    local pcY = starY - 28
+    MakeDivider(pcY)
+
+    local pcLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pcLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, pcY - 6)
+    pcLbl:SetTextColor(0.5, 0.8, 0.5); pcLbl:SetText("Pull Check:")
+
+    local pcToggle = CreateFrame("Button", "CDTPCToggle", f)
+    pcToggle:SetWidth(46); pcToggle:SetHeight(14)
+    pcToggle:SetPoint("TOPLEFT", f, "TOPLEFT", 3, pcY - 18)
+    local pcTogBg = pcToggle:CreateTexture(nil, "BACKGROUND")
+    pcTogBg:SetAllPoints(pcToggle); pcTogBg:SetTexture(0.15, 0.15, 0.3, 0.9)
+    pcToggle.bg = pcTogBg
+    local pcTogTxt = pcToggle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pcTogTxt:SetAllPoints(pcToggle); pcToggle.txt = pcTogTxt
+    pcToggle:SetScript("OnClick", function()
+        CDT_DB.pullcheck = not CDT_DB.pullcheck
+        CDT_CFG_UpdateButtons()
+        PC_UpdateVisibility()
+    end)
+    CDT_CFG_PC_TOGGLE = pcToggle
+
+    local manaLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    manaLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, pcY - 34)
+    manaLbl:SetTextColor(0.8, 0.8, 1); manaLbl:SetText("Mana threshold %:")
+
+    local manaEB = CreateFrame("EditBox", "CDTManaEB", f, "InputBoxTemplate")
+    manaEB:SetWidth(40); manaEB:SetHeight(16)
+    manaEB:SetPoint("TOPLEFT", f, "TOPLEFT", 120, pcY - 31)
+    manaEB:SetMaxLetters(3)
+    manaEB:SetText(tostring(CDT_DB.manaThresh))
+    manaEB:SetScript("OnEnterPressed", function()
+        local v = tonumber(manaEB:GetText()) or CDT_DB.manaThresh
+        if v < 1   then v = 1   end
+        if v > 100 then v = 100 end
+        CDT_DB.manaThresh = v
+        manaEB:SetText(tostring(v))
+        manaEB:ClearFocus()
+    end)
+    manaEB:SetScript("OnEscapePressed", function()
+        manaEB:SetText(tostring(CDT_DB.manaThresh))
+        manaEB:ClearFocus()
+    end)
+    CDT_CFG_MANA_EB = manaEB
+
+    local alphaLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    alphaLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, pcY - 54)
+    alphaLbl:SetTextColor(0.8, 0.8, 1); alphaLbl:SetText("Backdrop alpha %:")
+
+    local alphaEB = CreateFrame("EditBox", "CDTAlphaEB", f, "InputBoxTemplate")
+    alphaEB:SetWidth(40); alphaEB:SetHeight(16)
+    alphaEB:SetPoint("TOPLEFT", f, "TOPLEFT", 120, pcY - 51)
+    alphaEB:SetMaxLetters(3)
+    alphaEB:SetText(tostring(CDT_DB.bgAlpha))
+    alphaEB:SetScript("OnEnterPressed", function()
+        local v = tonumber(alphaEB:GetText()) or CDT_DB.bgAlpha
+        if v < 0   then v = 0   end
+        if v > 100 then v = 100 end
+        CDT_DB.bgAlpha = v
+        alphaEB:SetText(tostring(v))
+        alphaEB:ClearFocus()
+        CDT_ApplyBgAlpha()
+    end)
+    alphaEB:SetScript("OnEscapePressed", function()
+        alphaEB:SetText(tostring(CDT_DB.bgAlpha))
+        alphaEB:ClearFocus()
+    end)
+    CDT_CFG_ALPHA_EB = alphaEB
 
     CDT_CFG_FRAME = f
     CDT_CFG_UpdateButtons()
 end
 
 function CDT_CFG_UpdateButtons()
-    if CDT_CFG_SUMM_ROWS_TXT then CDT_CFG_SUMM_ROWS_TXT:SetText(tostring(CDT_DB.summRows or 2)) end
-    if CDT_CFG_SUMM_COLS_TXT then CDT_CFG_SUMM_COLS_TXT:SetText(tostring(CDT_DB.summCols or 5)) end
-
     local showOpts = CDT_SHOW_OPTS
     local curShow  = CDT_DB.showMode
     for idx = 1, _getn(showOpts) do
         local btn = CDT_CFG_SHOW_BTNS[idx]
         if btn then
             if curShow == showOpts[idx] then
+                btn.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
+                btn.txt:SetTextColor(0.3, 1, 0.3)
+            else
+                btn.bg:SetTexture(0.15, 0.15, 0.3, 0.9)
+                btn.txt:SetTextColor(0.65, 0.65, 0.65)
+            end
+        end
+    end
+
+    local viewOpts = CDT_VIEW_OPTS
+    local curView  = CDT_DB.viewMode
+    for idx = 1, _getn(viewOpts) do
+        local btn = CDT_CFG_VIEW_BTNS[idx]
+        if btn then
+            if curView == viewOpts[idx] then
+                btn.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
+                btn.txt:SetTextColor(0.3, 1, 0.3)
+            else
+                btn.bg:SetTexture(0.15, 0.15, 0.3, 0.9)
+                btn.txt:SetTextColor(0.65, 0.65, 0.65)
+            end
+        end
+    end
+
+    local readyOpts = CDT_READY_OPTS
+    local curReady  = CDT_DB.readyMode
+    for idx = 1, _getn(readyOpts) do
+        local btn = CDT_CFG_READY_BTNS[idx]
+        if btn then
+            if curReady == readyOpts[idx] then
                 btn.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
                 btn.txt:SetTextColor(0.3, 1, 0.3)
             else
@@ -1340,6 +2163,24 @@ function CDT_CFG_UpdateButtons()
         end
     end
 
+    if CDT_CFG_PC_TOGGLE then
+        if CDT_DB.pullcheck then
+            CDT_CFG_PC_TOGGLE.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
+            CDT_CFG_PC_TOGGLE.txt:SetText("on")
+            CDT_CFG_PC_TOGGLE.txt:SetTextColor(0.3, 1, 0.3)
+        else
+            CDT_CFG_PC_TOGGLE.bg:SetTexture(0.2, 0.1, 0.1, 0.9)
+            CDT_CFG_PC_TOGGLE.txt:SetText("off")
+            CDT_CFG_PC_TOGGLE.txt:SetTextColor(0.5, 0.2, 0.2)
+        end
+    end
+
+    if CDT_CFG_MANA_EB then
+        CDT_CFG_MANA_EB:SetText(tostring(CDT_DB.manaThresh))
+    end
+    if CDT_CFG_ALPHA_EB then
+        CDT_CFG_ALPHA_EB:SetText(tostring(CDT_DB.bgAlpha))
+    end
 end
 
 -- ── Events ────────────────────────────────────────────────────────────────────
@@ -1349,6 +2190,8 @@ ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("RAID_ROSTER_UPDATE")
 ev:RegisterEvent("PARTY_MEMBERS_CHANGED")
 ev:RegisterEvent("UNIT_CASTEVENT")
+ev:RegisterEvent("PLAYER_REGEN_DISABLED")
+ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 ev:SetScript("OnEvent", function()
     if event == "PLAYER_ENTERING_WORLD" then
@@ -1365,6 +2208,15 @@ ev:SetScript("OnEvent", function()
         return
     end
 
+    if event == "PLAYER_REGEN_DISABLED" then
+        PC_OnCombatStart()
+        return
+    end
+
+    if event == "PLAYER_REGEN_ENABLED" then
+        PC_OnCombatEnd()
+        return
+    end
 
     -- UNIT_CASTEVENT
     if arg3 == "CAST" then
@@ -1385,6 +2237,11 @@ ev:SetScript("OnEvent", function()
                 CDT_MO_PinExpand()
                 CDT_Redraw()
             end
+        end
+
+        if PC_HEAL_IDS[spellId] and PC_IN_COMBAT then
+            local name = CDT_GUID_TO_NAME[arg1]
+            if name then PC_RecordHealCast(name) end
         end
     end
 end)
@@ -1416,7 +2273,6 @@ SlashCmdList["CDTRACKER"] = function(msg)
             for j = 1, n do list[j] = nil end
             list.dirty = false
         end
-        CDT_HAS_ACTIVE   = false
         CDT_LAYOUT_DIRTY = true
         CDT_Redraw()
         DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Entries cleared.")
@@ -1432,9 +2288,7 @@ SlashCmdList["CDTRACKER"] = function(msg)
         if CDT_CFG_FRAME:IsVisible() then CDT_CFG_FRAME:Hide()
         else CDT_CFG_UpdateButtons(); CDT_CFG_FRAME:Show() end
     elseif msg == "test" then
-        CDT_AddEntry("Varok",     1161,  nil)
-        CDT_AddEntry("Garrosh",   1161,  nil)
-        CDT_AddEntry("Baine",     1161,  nil)
+        CDT_AddEntry("Thrall",    1161,  nil)
         CDT_AddEntry("Cairne",    5209,  nil)
         CDT_AddEntry("Tyrande",   29166, nil)
         CDT_AddEntry("Malfurion", 20484, nil)
@@ -1444,9 +2298,22 @@ SlashCmdList["CDTRACKER"] = function(msg)
         CDT_AddEntry("Uther",     19752, nil)
         CDT_AddEntry("Anduin",    6346,  nil)
         CDT_AddEntry("Hamuul",    9863,  nil)
-        CDT_AddEntry("Saurfang",  676,   nil)
+        CDT_AddEntry("Garrosh",   676,   nil)
         CDT_Redraw()
-        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Test entries added (incl. 3x C.Shout).")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Test entries added.")
+    elseif msg == "pctest" then
+        PC_HEALERS["Tyrande"]  = true
+        PC_HEALERS["Anduin"]   = true
+        PC_HEALERS["Uther"]    = true
+        PC_HEALERS["Malfurion"]= true
+        PC_HEALERS["Rehgar"]   = true
+        PC_HEALER_COUNT = 5
+        PC_PENDING[1] = "Hamuul"
+        PC_PENDING[2] = "Velen"
+        PC_PENDING_N  = 2
+        PC_DrawPrompts()
+        PC_Poll()
+        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r PullCheck test data added.")
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r CoolDown Tracker commands:")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt          - toggle show/hide")
@@ -1455,5 +2322,6 @@ SlashCmdList["CDTRACKER"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt reset    - move frame to center")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt cfg      - open config window")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt test     - add CDT test entries")
+        DEFAULT_CHAT_FRAME:AddMessage("  /cdt pctest   - add PullCheck test data")
     end
 end
