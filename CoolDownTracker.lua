@@ -11,11 +11,11 @@ local CDT_Clear
 
 local CDT_HDR_H = 16
 local CDT_PAD = 1
-local CDT_COL_W = 40
-local CDT_ICON_SZ = 14
-local CDT_SLOT_H = 30
+local CDT_COL_W = 32
+local CDT_ICON_SZ = 28
+local CDT_SLOT_H = 52
 local CDT_GAP_X = 1
-local CDT_GAP_Y = 1
+local CDT_GAP_Y = 4
 
 local PC_HDR_H = 14
 local PC_ROW_H = 14
@@ -95,7 +95,7 @@ local function CDT_InitDB()
     if CDT_DB.x == nil then CDT_DB.x = 0 end
     if CDT_DB.y == nil then CDT_DB.y = 220 end
     if CDT_DB.shown == nil then CDT_DB.shown = true end
-    if CDT_DB.cols == nil then CDT_DB.cols = 5 end
+    if CDT_DB.cols == nil then CDT_DB.cols = 6 end
     if CDT_DB.rows == nil then CDT_DB.rows = 2 end
     if CDT_DB.spells == nil then CDT_DB.spells = {} end
     if CDT_DB.pullShown == nil then CDT_DB.pullShown = true end
@@ -234,11 +234,11 @@ local function CDT_EnsureSlots(capacity)
         slot.icon = icon
 
         slot.text = {}
-        for r = 1, 3 do
+        for r = 1, 2 do
             local fs = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             fs:SetWidth(CDT_COL_W)
             fs:SetJustifyH("CENTER")
-            fs:SetPoint("TOP", slot, "TOP", 0, -(CDT_ICON_SZ + 1 + (r - 1) * 11))
+            fs:SetPoint("TOP", slot, "TOP", 0, -(CDT_ICON_SZ + 2 + (r - 1) * 11))
             slot.text[r] = fs
         end
 
@@ -247,10 +247,10 @@ local function CDT_EnsureSlots(capacity)
 end
 
 local function CDT_ResizeAndLayout()
-    local cols = tonumber(CDT_DB.cols) or 5
+    local cols = tonumber(CDT_DB.cols) or 6
     local rows = tonumber(CDT_DB.rows) or 2
-    if cols < 1 then cols = 1 elseif cols > 10 then cols = 10 end
-    if rows < 1 then rows = 1 elseif rows > 10 then rows = 10 end
+    if cols < 1 then cols = 1 elseif cols > 12 then cols = 12 end
+    if rows < 1 then rows = 1 elseif rows > 12 then rows = 12 end
     CDT_DB.cols = cols
     CDT_DB.rows = rows
 
@@ -268,7 +268,7 @@ local function CDT_Redraw()
     CDT_SortAndUpdate(now)
 
     local defs = CDT_EnabledDefs()
-    local cap = (CDT_DB.cols or 5) * (CDT_DB.rows or 2)
+    local cap = (CDT_DB.cols or 6) * (CDT_DB.rows or 2)
     CDT_EnsureSlots(cap)
 
     for i = 1, cap do
@@ -302,7 +302,6 @@ local function CDT_Redraw()
                 slot.text[2]:SetText(ready[2] or "")
                 slot.text[1]:SetTextColor(0.2, 1, 0.2)
                 slot.text[2]:SetTextColor(0.2, 1, 0.2)
-                slot.text[3]:SetText("")
             elseif soonest then
                 local rem = soonest - now
                 if rem < 0 then rem = 0 end
@@ -310,13 +309,11 @@ local function CDT_Redraw()
                 slot.text[2]:SetText(Sec(rem))
                 slot.text[1]:SetTextColor(1, 0.85, 0.55)
                 slot.text[2]:SetTextColor(1, 0.35, 0.2)
-                slot.text[3]:SetText("")
             else
                 slot.text[1]:SetText("---")
                 slot.text[2]:SetText("--")
                 slot.text[1]:SetTextColor(0.5, 0.5, 0.5)
                 slot.text[2]:SetTextColor(0.45, 0.45, 0.45)
-                slot.text[3]:SetText("")
             end
         else
             slot:Hide()
