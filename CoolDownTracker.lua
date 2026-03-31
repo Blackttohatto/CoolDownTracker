@@ -176,6 +176,7 @@ function CDT_InitDB()
     if CDT_DB.readyMode   == nil then CDT_DB.readyMode   = "on"     end
     CDT_DB.viewMode  = "summary"
     CDT_DB.readyMode = "on"
+    if CDT_DB.barDir      == nil then CDT_DB.barDir      = "H"      end
     if CDT_DB.summRows    == nil then CDT_DB.summRows    = 2        end
     if CDT_DB.summCols    == nil then CDT_DB.summCols    = 5        end
     if CDT_DB.spells      == nil then CDT_DB.spells      = {}       end
@@ -354,8 +355,8 @@ CDT_CFG_FRAME      = nil
 CDT_CONFIRM_FRAME  = nil
 CDT_CFG_SHOW_BTNS  = {}
 CDT_CFG_SPELL_CHKS = {}
-CDT_CFG_SUMM_ROWS_EB = nil
-CDT_CFG_SUMM_COLS_EB = nil
+CDT_CFG_SUMM_ROWS_TXT = nil
+CDT_CFG_SUMM_COLS_TXT = nil
 
 CDT_BLOCK_ROWS         = {}
 CDT_ROW_CACHE          = {}
@@ -365,48 +366,6 @@ CDT_SUMM_COLS  = {}
 CDT_SUMM_CACHE = {}
 CDT_SUMM_READY_NAMES = { nil, nil }
 CDT_SUMM_TXT         = { "", "" }
-CDT_SUMM_TT_MAX      = 10
-
-function CDT_SummTT_Show(anchorFrame, spellIdx)
-    local def = CDT_SPELL_DEFS[spellIdx]
-    if not def then return end
-    local list = CDT_BY_KEY[def.key]
-    GameTooltip:SetOwner(anchorFrame, "ANCHOR_RIGHT")
-    GameTooltip:ClearLines()
-    GameTooltip:AddLine(def.label)
-    GameTooltip:AddLine(" ")
-    local n = _getn(list)
-    if n == 0 then
-        GameTooltip:AddLine("No entries", 0.6, 0.6, 0.6)
-    else
-        local shown = 0
-        for i = 1, n do
-            local e = list[i]
-            local line
-            if e.ready then
-                line = e.name .. " - READY"
-                GameTooltip:AddLine(line, 0.7, 1, 0.7)
-            else
-                local rem = e.expireAt - _GetTime()
-                if rem < 0 then rem = 0 end
-                local m = _floor(rem / 60)
-                local s = _floor(_mod(rem, 60))
-                line = e.name .. " - " .. m .. CDT_SEC_STR[s]
-                GameTooltip:AddLine(line, 1, 0.82, 0.45)
-            end
-            shown = shown + 1
-            if shown >= CDT_SUMM_TT_MAX then break end
-        end
-        if n > shown then
-            GameTooltip:AddLine("+" .. (n - shown) .. " more", 0.7, 0.7, 0.7)
-        end
-    end
-    GameTooltip:Show()
-end
-
-function CDT_SummTT_Hide()
-    GameTooltip:Hide()
-end
 
 
 -- ── Mode flag sync ────────────────────────────────────────────────────────────
@@ -490,9 +449,14 @@ end
 
 function CDT_ApplyCollapsedSize()
     local w, h
-    w = CDT_SummWidth()
-    h = CDT_HDR_H
-    if CDT_HDR_FRAME then CDT_HDR_FRAME:SetWidth(w) end
+    if CDT_BAR_VERT then
+        -- FIX 2: vertical strip — narrow width, tall height
+        w = CDT_HDR_H
+        h = CDT_W
+    else
+        w = CDT_SummWidth()
+        h = CDT_HDR_H
+    end
     if CDT_LAST_W ~= w or CDT_LAST_H ~= h then
         CDT_LAST_W = w
         CDT_LAST_H = h
@@ -514,7 +478,12 @@ function CDT_ResizeFrame()
     frameH = CDT_HDR_H + CDT_SummBodyH()
     CDT_SUMM_BODY:SetWidth(frameW)
     CDT_SUMM_BODY:SetHeight(CDT_SummBodyH())
-    if CDT_HDR_FRAME then CDT_HDR_FRAME:SetWidth(frameW) end
+
+    -- FIX 2: in vertical mode the main frame stays thin; body floats to the right
+    if CDT_BAR_VERT then
+        frameW = CDT_HDR_H
+        frameH = CDT_W
+    end
 
     if frameH ~= CDT_LAST_H or frameW ~= CDT_LAST_W then
         CDT_LAST_H = frameH
@@ -630,8 +599,7 @@ function CDT_SummRedraw(now)
             if ca.xOff ~= xOff or ca.rowIdx ~= rowIdx then
                 ca.xOff   = xOff
                 ca.rowIdx = rowIdx
-                local iconX = xOff + _floor((colW - iconSz) / 2)
-                sc.iconFrame:SetPoint("TOPLEFT", CDT_SUMM_BODY, "TOPLEFT", iconX, iconY)
+                sc.iconFrame:SetPoint("TOPLEFT", CDT_SUMM_BODY, "TOPLEFT", xOff, iconY)
                 for r = 1, CDT_SUMM_NM_ROWS do
                     sc.nm[r]:SetPoint("TOPLEFT", CDT_SUMM_BODY, "TOPLEFT",
                         xOff, nmBaseY - (r - 1) * nmH)
@@ -831,13 +799,6 @@ function CDT_Build()
     CDT_SUMM_BODY = CreateFrame("Frame", "CDTSummBody", CDT_FRAME)
     CDT_SUMM_BODY:SetWidth(CDT_W)
     CDT_SUMM_BODY:SetHeight(CDT_SummBodyH())
-    CDT_SUMM_BODY:EnableMouse(true)
-    CDT_SUMM_BODY:SetScript("OnEnter", function()
-        if CDT_DB.showMode == "mouseover" then CDT_MOUSEOVER = true end
-    end)
-    CDT_SUMM_BODY:SetScript("OnLeave", function()
-        if CDT_DB.showMode == "mouseover" then CDT_MOUSEOVER = false end
-    end)
     CDT_SUMM_BODY:Hide()
     local summBg = CDT_SUMM_BODY:CreateTexture(nil, "BACKGROUND")
     summBg:SetAllPoints(CDT_SUMM_BODY)
@@ -1065,7 +1026,7 @@ end
 
 function CDT_BuildConfig()
     local spellCount = _getn(CDT_SPELL_DEFS)
-    local cfgH = 178 + spellCount * 14 + 28
+    local cfgH = 230 + spellCount * 14 + 28
     local f = CreateFrame("Frame", "CDTConfigFrame", UIParent)
     f:SetWidth(210); f:SetHeight(cfgH)
     f:SetPoint("TOPLEFT", CDT_FRAME, "TOPRIGHT", 4, 0)
@@ -1143,17 +1104,17 @@ function CDT_BuildConfig()
     descMO:SetJustifyH("LEFT"); descMO:SetText("mouseover: collapse to titlebar")
 
     -- ── Summary grid layout ──
-    MakeDivider(-86)
+    MakeDivider(-129)
     local gridLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gridLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -92)
+    gridLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -134)
     gridLbl:SetTextColor(0.8, 0.8, 1); gridLbl:SetText("Summary grid (fixed):")
 
     local rowLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -106)
+    rowLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -148)
     rowLbl:SetTextColor(0.7, 0.7, 0.9); rowLbl:SetText("Rows")
     local rowEb = CreateFrame("EditBox", "CDTSummRowsEB", f, "InputBoxTemplate")
     rowEb:SetWidth(34); rowEb:SetHeight(16)
-    rowEb:SetPoint("TOPLEFT", f, "TOPLEFT", 48, -107)
+    rowEb:SetPoint("TOPLEFT", f, "TOPLEFT", 48, -149)
     rowEb:SetAutoFocus(false)
     rowEb:SetNumeric(true)
     rowEb:SetMaxLetters(2)
@@ -1181,11 +1142,11 @@ function CDT_BuildConfig()
     CDT_CFG_SUMM_ROWS_EB = rowEb
 
     local colLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    colLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 104, -106)
+    colLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 104, -148)
     colLbl:SetTextColor(0.7, 0.7, 0.9); colLbl:SetText("Cols")
     local colEb = CreateFrame("EditBox", "CDTSummColsEB", f, "InputBoxTemplate")
     colEb:SetWidth(34); colEb:SetHeight(16)
-    colEb:SetPoint("TOPLEFT", f, "TOPLEFT", 142, -107)
+    colEb:SetPoint("TOPLEFT", f, "TOPLEFT", 142, -149)
     colEb:SetAutoFocus(false)
     colEb:SetNumeric(true)
     colEb:SetMaxLetters(2)
@@ -1213,20 +1174,95 @@ function CDT_BuildConfig()
     CDT_CFG_SUMM_COLS_EB = colEb
 
     local gridDesc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gridDesc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -120)
+    gridDesc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -161)
     gridDesc:SetTextColor(0.45, 0.45, 0.55); gridDesc:SetWidth(194)
     gridDesc:SetJustifyH("LEFT"); gridDesc:SetText("Set fixed rows/cols. Overflow spells are hidden.")
 
+    -- ── Summary grid layout ──
+    MakeDivider(-129)
+    local gridLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    gridLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -134)
+    gridLbl:SetTextColor(0.8, 0.8, 1); gridLbl:SetText("Summary grid (fixed):")
+
+    local rowLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rowLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -148)
+    rowLbl:SetTextColor(0.7, 0.7, 0.9); rowLbl:SetText("Rows")
+
+    local rowMinus = CreateFrame("Button", "CDTSummRowsMinus", f)
+    rowMinus:SetWidth(16); rowMinus:SetHeight(14)
+    rowMinus:SetPoint("TOPLEFT", f, "TOPLEFT", 48, -148)
+    rowMinus:SetScript("OnClick", function()
+        CDT_DB.summRows = CDT_DB.summRows - 1
+        if CDT_DB.summRows < CDT_SUMM_MIN_ROWS then CDT_DB.summRows = CDT_SUMM_MIN_ROWS end
+        CDT_LAST_H = -1; CDT_LAST_W = -1
+        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
+    end)
+    local rowMinusTxt = rowMinus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rowMinusTxt:SetAllPoints(rowMinus); rowMinusTxt:SetText("-")
+
+    local rowPlus = CreateFrame("Button", "CDTSummRowsPlus", f)
+    rowPlus:SetWidth(16); rowPlus:SetHeight(14)
+    rowPlus:SetPoint("TOPLEFT", f, "TOPLEFT", 94, -148)
+    rowPlus:SetScript("OnClick", function()
+        CDT_DB.summRows = CDT_DB.summRows + 1
+        if CDT_DB.summRows > CDT_SUMM_MAX_ROWS then CDT_DB.summRows = CDT_SUMM_MAX_ROWS end
+        CDT_LAST_H = -1; CDT_LAST_W = -1
+        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
+    end)
+    local rowPlusTxt = rowPlus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rowPlusTxt:SetAllPoints(rowPlus); rowPlusTxt:SetText("+")
+
+    CDT_CFG_SUMM_ROWS_TXT = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    CDT_CFG_SUMM_ROWS_TXT:SetPoint("TOPLEFT", f, "TOPLEFT", 69, -148)
+    CDT_CFG_SUMM_ROWS_TXT:SetTextColor(0.9, 0.9, 0.9)
+
+    local colLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 126, -148)
+    colLbl:SetTextColor(0.7, 0.7, 0.9); colLbl:SetText("Cols")
+
+    local colMinus = CreateFrame("Button", "CDTSummColsMinus", f)
+    colMinus:SetWidth(16); colMinus:SetHeight(14)
+    colMinus:SetPoint("TOPLEFT", f, "TOPLEFT", 166, -148)
+    colMinus:SetScript("OnClick", function()
+        CDT_DB.summCols = CDT_DB.summCols - 1
+        if CDT_DB.summCols < CDT_SUMM_MIN_COLS then CDT_DB.summCols = CDT_SUMM_MIN_COLS end
+        CDT_LAST_H = -1; CDT_LAST_W = -1
+        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
+    end)
+    local colMinusTxt = colMinus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colMinusTxt:SetAllPoints(colMinus); colMinusTxt:SetText("-")
+
+    local colPlus = CreateFrame("Button", "CDTSummColsPlus", f)
+    colPlus:SetWidth(16); colPlus:SetHeight(14)
+    colPlus:SetPoint("TOPLEFT", f, "TOPLEFT", 192, -148)
+    colPlus:SetScript("OnClick", function()
+        CDT_DB.summCols = CDT_DB.summCols + 1
+        if CDT_DB.summCols > CDT_SUMM_MAX_COLS then CDT_DB.summCols = CDT_SUMM_MAX_COLS end
+        CDT_LAST_H = -1; CDT_LAST_W = -1
+        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
+    end)
+    local colPlusTxt = colPlus:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colPlusTxt:SetAllPoints(colPlus); colPlusTxt:SetText("+")
+
+    CDT_CFG_SUMM_COLS_TXT = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    CDT_CFG_SUMM_COLS_TXT:SetPoint("TOPLEFT", f, "TOPLEFT", 184, -148)
+    CDT_CFG_SUMM_COLS_TXT:SetTextColor(0.9, 0.9, 0.9)
+
+    local gridDesc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    gridDesc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -161)
+    gridDesc:SetTextColor(0.45, 0.45, 0.55); gridDesc:SetWidth(194)
+    gridDesc:SetJustifyH("LEFT"); gridDesc:SetText("Disabled spells no longer resize the summary panel.")
+
     -- ── Spell filter ──
-    MakeDivider(-132)
+    MakeDivider(-173)
     local spellsLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    spellsLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -138)
+    spellsLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -178)
     spellsLbl:SetTextColor(0.8, 0.8, 1); spellsLbl:SetText("Track spells:")
 
     CDT_CFG_SPELL_CHKS = {}
     for i = 1, spellCount do
         local def  = CDT_SPELL_DEFS[i]
-        local yOff = -138 - 4 - i * 14
+        local yOff = -178 - 4 - i * 14
 
         local box = CreateFrame("Frame", "CDTSpellBox"..i, f)
         box:SetWidth(10); box:SetHeight(10)
@@ -1259,7 +1295,7 @@ function CDT_BuildConfig()
     end
 
     -- Star disclaimer
-    local starY = -138 - 4 - spellCount * 14 - 6
+    local starY = -178 - 4 - spellCount * 14 - 6
     local starDisc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     starDisc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, starY)
     starDisc:SetTextColor(0.55, 0.52, 0.28)
@@ -1272,12 +1308,8 @@ function CDT_BuildConfig()
 end
 
 function CDT_CFG_UpdateButtons()
-    if CDT_CFG_SUMM_ROWS_EB and not CDT_CFG_SUMM_ROWS_EB:HasFocus() then
-        CDT_CFG_SUMM_ROWS_EB:SetText(tostring(CDT_DB.summRows or 2))
-    end
-    if CDT_CFG_SUMM_COLS_EB and not CDT_CFG_SUMM_COLS_EB:HasFocus() then
-        CDT_CFG_SUMM_COLS_EB:SetText(tostring(CDT_DB.summCols or 5))
-    end
+    if CDT_CFG_SUMM_ROWS_TXT then CDT_CFG_SUMM_ROWS_TXT:SetText(tostring(CDT_DB.summRows or 2)) end
+    if CDT_CFG_SUMM_COLS_TXT then CDT_CFG_SUMM_COLS_TXT:SetText(tostring(CDT_DB.summCols or 5)) end
 
     local showOpts = CDT_SHOW_OPTS
     local curShow  = CDT_DB.showMode
