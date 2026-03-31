@@ -20,6 +20,8 @@ local CDT_GAP_Y = 4
 local PC_HDR_H = 14
 local PC_ROW_H = 14
 local PC_RANGE = 40
+local CDT_UPDATE_INTERVAL = 5.0
+local PC_UPDATE_INTERVAL = 3.0
 
 CDT_SPELL_DEFS = {
     { key="cshout",             label="C.Shout",           cd=600,  icon="ability_bullrush",                cr=0.78, cg=0.61, cb=0.43 },
@@ -71,6 +73,8 @@ CDT_SLOTS = {}
 CDT_BY_KEY = {}
 CDT_GUID_TO_NAME = {}
 CDT_CFG_SPELL_BTNS = {}
+CDT_ENABLED_DEFS = {}
+CDT_ENABLED_DEFS_DIRTY = true
 
 PC_FRAME = nil
 PC_HEADER_TXT = nil
@@ -107,6 +111,7 @@ local function CDT_InitDB()
         local key = CDT_SPELL_DEFS[i].key
         if CDT_DB.spells[key] == nil then CDT_DB.spells[key] = true end
     end
+    CDT_ENABLED_DEFS_DIRTY = true
 end
 
 local function CDT_BuildIndexes()
@@ -196,13 +201,20 @@ local function CDT_SortAndUpdate(now)
     end
 end
 
-local function CDT_EnabledDefs()
-    local defs = {}
+local function CDT_RebuildEnabledDefs()
+    for i = _getn(CDT_ENABLED_DEFS), 1, -1 do CDT_ENABLED_DEFS[i] = nil end
     for i = 1, _getn(CDT_SPELL_DEFS) do
         local def = CDT_SPELL_DEFS[i]
-        if CDT_DB.spells[def.key] ~= false then defs[_getn(defs) + 1] = def end
+        if CDT_DB.spells[def.key] ~= false then
+            CDT_ENABLED_DEFS[_getn(CDT_ENABLED_DEFS) + 1] = def
+        end
     end
-    return defs
+    CDT_ENABLED_DEFS_DIRTY = false
+end
+
+local function CDT_EnabledDefs()
+    if CDT_ENABLED_DEFS_DIRTY then CDT_RebuildEnabledDefs() end
+    return CDT_ENABLED_DEFS
 end
 
 local function CDT_SetMainPoint(frame, x, y)
@@ -482,6 +494,7 @@ local function CDT_BuildConfig()
         btn.key = def.key
         btn:SetScript("OnClick", function()
             CDT_DB.spells[btn.key] = not CDT_DB.spells[btn.key]
+            CDT_ENABLED_DEFS_DIRTY = true
             if CDT_DB.spells[btn.key] then
                 btn.bg:SetTexture(0.12, 0.35, 0.12, 0.95)
                 btn.txt:SetText("on")
@@ -689,14 +702,22 @@ local function PC_BuildFrame()
 end
 
 local ticker = CreateFrame("Frame", "CDTTickerFrame")
-local acc = 0
+local cdtAcc = 0
+local pcAcc = 0
 
 ticker:SetScript("OnUpdate", function()
-    acc = acc + arg1
-    if acc < 0.2 then return end
-    acc = 0
-    if CDT_DB and CDT_DB.shown then CDT_Redraw() end
-    if CDT_DB and CDT_DB.pullShown then PC_Poll() end
+    cdtAcc = cdtAcc + arg1
+    pcAcc = pcAcc + arg1
+
+    if CDT_DB and CDT_DB.shown and cdtAcc >= CDT_UPDATE_INTERVAL then
+        cdtAcc = 0
+        CDT_Redraw()
+    end
+
+    if CDT_DB and CDT_DB.pullShown and pcAcc >= PC_UPDATE_INTERVAL then
+        pcAcc = 0
+        PC_Poll()
+    end
 end)
 
 local ev = CreateFrame("Frame", "CDTEventFrame")
