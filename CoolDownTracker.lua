@@ -136,7 +136,6 @@ _kd = nil
 
 -- Config option tables
 CDT_SHOW_OPTS  = { "always", "raid", "mouseover" }
-CDT_BAR_OPTS   = { "H", "V" }
 
 -- Precomputed raid unit strings
 CDT_RAID_UNITS = {}
@@ -342,7 +341,6 @@ CDT_MODE_RAID      = false
 CDT_MODE_MO        = false
 CDT_MODE_SUMM      = false
 CDT_READY_OFF_FLAG = false
-CDT_BAR_VERT       = false
 
 CDT_HAS_ACTIVE   = false
 CDT_LAYOUT_DIRTY = false
@@ -356,7 +354,6 @@ end
 CDT_CFG_FRAME      = nil
 CDT_CONFIRM_FRAME  = nil
 CDT_CFG_SHOW_BTNS  = {}
-CDT_CFG_BAR_BTNS   = {}
 CDT_CFG_SPELL_CHKS = {}
 CDT_CFG_SUMM_ROWS_TXT = nil
 CDT_CFG_SUMM_COLS_TXT = nil
@@ -377,7 +374,6 @@ function CDT_SyncModeFlags()
     CDT_MODE_MO        = CDT_DB.showMode  == "mouseover"
     CDT_MODE_SUMM      = true
     CDT_READY_OFF_FLAG = false
-    CDT_BAR_VERT       = CDT_MODE_MO and (CDT_DB.barDir == "V")
 end
 
 -- ── Summary layout helpers ────────────────────────────────────────────────────
@@ -414,25 +410,12 @@ end
 -- Called whenever showMode or barDir changes, and once at build time.
 function CDT_ApplyHeaderLayout()
     if not CDT_HDR_FRAME then return end
-    if CDT_BAR_VERT then
-        -- Vertical strip: header fills the thin (CDT_HDR_H wide) full-height bar
-        CDT_HDR_FRAME:SetWidth(CDT_HDR_H)
-        CDT_HDR_FRAME:SetHeight(CDT_W)
-        -- Hide text and buttons — no room in a 15px wide strip
-        if CDT_HDR_TXT  then CDT_HDR_TXT:Hide()  end
-        if CDT_HDR_BTNS then
-            CDT_HDR_BTNS[1]:Hide()
-            CDT_HDR_BTNS[2]:Hide()
-        end
-    else
-        -- Normal horizontal header
-        CDT_HDR_FRAME:SetWidth(CDT_W)
-        CDT_HDR_FRAME:SetHeight(CDT_HDR_H)
-        if CDT_HDR_TXT  then CDT_HDR_TXT:Show()  end
-        if CDT_HDR_BTNS then
-            CDT_HDR_BTNS[1]:Show()
-            CDT_HDR_BTNS[2]:Show()
-        end
+    CDT_HDR_FRAME:SetHeight(CDT_HDR_H)
+    CDT_HDR_FRAME:SetWidth(CDT_FRAME:GetWidth())
+    if CDT_HDR_TXT  then CDT_HDR_TXT:Show()  end
+    if CDT_HDR_BTNS then
+        CDT_HDR_BTNS[1]:Show()
+        CDT_HDR_BTNS[2]:Show()
     end
 end
 
@@ -444,15 +427,8 @@ function CDT_RebuildBodyAnchor()
     if not CDT_BODY then return end
     CDT_BODY:ClearAllPoints()
     CDT_SUMM_BODY:ClearAllPoints()
-    if CDT_BAR_VERT then
-        -- Body opens to the right of the vertical strip
-        CDT_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPRIGHT", 1, 0)
-        CDT_SUMM_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPRIGHT", 1, 0)
-    else
-        -- Body hangs below the header (normal)
-        CDT_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
-        CDT_SUMM_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
-    end
+    CDT_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
+    CDT_SUMM_BODY:SetPoint("TOPLEFT", CDT_FRAME, "TOPLEFT", 0, -CDT_HDR_H)
 end
 
 -- ── Visibility / resize ───────────────────────────────────────────────────────
@@ -543,8 +519,6 @@ end
 
 function CDT_Redraw()
     if not CDT_READY then return end
-
-    if not CDT_HAS_ACTIVE and not CDT_MODE_MO then return end
 
     local now      = _GetTime()
     local defs     = CDT_SPELL_DEFS
@@ -756,7 +730,6 @@ function CDT_Build()
     CDT_FRAME:SetScript("OnLeave", function()
         if CDT_DB.showMode == "mouseover" then
             CDT_MOUSEOVER = false
-            if not CDT_MO_PINNED then CDT_SetBodyVisible(false) end
         end
     end)
 
@@ -810,6 +783,13 @@ function CDT_Build()
     CDT_BODY = CreateFrame("Frame", "CDTBody", CDT_FRAME)
     CDT_BODY:SetWidth(CDT_W)
     CDT_BODY:SetHeight(10)
+    CDT_BODY:EnableMouse(true)
+    CDT_BODY:SetScript("OnEnter", function()
+        if CDT_DB.showMode == "mouseover" then CDT_MOUSEOVER = true end
+    end)
+    CDT_BODY:SetScript("OnLeave", function()
+        if CDT_DB.showMode == "mouseover" then CDT_MOUSEOVER = false end
+    end)
     -- FIX 3: anchor set via CDT_RebuildBodyAnchor() after this block
     local bodyBg = CDT_BODY:CreateTexture(nil, "BACKGROUND")
     bodyBg:SetAllPoints(CDT_BODY)
@@ -962,6 +942,9 @@ function CDT_Build()
                 CDT_MO_PINNED = false
                 if CDT_MODE_MO and not CDT_MOUSEOVER then CDT_SetBodyVisible(false) end
             end
+            if CDT_MODE_MO and (not CDT_MOUSEOVER) and (not CDT_MO_PINNED) and CDT_BODY_VISIBLE then
+                CDT_SetBodyVisible(false)
+            end
             CDT_Redraw()
         end
     end)
@@ -1109,42 +1092,80 @@ function CDT_BuildConfig()
     descMO:SetTextColor(0.45, 0.45, 0.55); descMO:SetWidth(198)
     descMO:SetJustifyH("LEFT"); descMO:SetText("mouseover: collapse to titlebar")
 
-    -- ── Bar orientation ──
-    MakeDivider(-85)
-    local barLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    barLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -90)
-    barLbl:SetTextColor(0.8, 0.8, 1); barLbl:SetText("Collapsed bar (mouseover):")
+    -- ── Summary grid layout ──
+    MakeDivider(-129)
+    local gridLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    gridLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -134)
+    gridLbl:SetTextColor(0.8, 0.8, 1); gridLbl:SetText("Summary grid (fixed):")
 
-    local barOpts = CDT_BAR_OPTS
-    for idx = 1, _getn(barOpts) do
-        local dir = barOpts[idx]
-        local btn = CreateFrame("Button", "CDTBarBtn"..idx, f)
-        btn:SetWidth(30); btn:SetHeight(14)
-        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 3 + (idx-1)*34, -103)
-        local bbg = btn:CreateTexture(nil, "BACKGROUND")
-        bbg:SetAllPoints(btn); bbg:SetTexture(0.15, 0.15, 0.3, 0.9)
-        btn.bg = bbg
-        local btxt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btxt:SetAllPoints(btn); btxt:SetText(dir); btn.txt = btxt
-        local d = dir
-        btn:SetScript("OnClick", function()
-            if CDT_DB.showMode ~= "mouseover" then return end
-            CDT_DB.barDir = d
-            CDT_SyncModeFlags()
-            CDT_CFG_UpdateButtons()
-            -- FIX 2: reapply header layout and body anchors when bar dir changes
-            CDT_ApplyHeaderLayout()
-            CDT_RebuildBodyAnchor()
+    local rowLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rowLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -148)
+    rowLbl:SetTextColor(0.7, 0.7, 0.9); rowLbl:SetText("Rows")
+    local rowEb = CreateFrame("EditBox", "CDTSummRowsEB", f, "InputBoxTemplate")
+    rowEb:SetWidth(34); rowEb:SetHeight(16)
+    rowEb:SetPoint("TOPLEFT", f, "TOPLEFT", 48, -149)
+    rowEb:SetAutoFocus(false)
+    rowEb:SetNumeric(true)
+    rowEb:SetMaxLetters(2)
+    rowEb:SetScript("OnEscapePressed", function() rowEb:ClearFocus(); CDT_CFG_UpdateButtons() end)
+    rowEb:SetScript("OnEnterPressed", function()
+        local v = tonumber(rowEb:GetText()) or 2
+        if v < CDT_SUMM_MIN_ROWS then v = CDT_SUMM_MIN_ROWS end
+        if v > CDT_SUMM_MAX_ROWS then v = CDT_SUMM_MAX_ROWS end
+        CDT_DB.summRows = v
+        rowEb:ClearFocus()
+        CDT_LAST_H = -1; CDT_LAST_W = -1
+        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
+    end)
+    rowEb:SetScript("OnEditFocusLost", function()
+        local v = tonumber(rowEb:GetText())
+        if v then
+            if v < CDT_SUMM_MIN_ROWS then v = CDT_SUMM_MIN_ROWS end
+            if v > CDT_SUMM_MAX_ROWS then v = CDT_SUMM_MAX_ROWS end
+            CDT_DB.summRows = v
             CDT_LAST_H = -1; CDT_LAST_W = -1
-            CDT_ResizeFrame()
-        end)
-        CDT_CFG_BAR_BTNS[idx] = btn
-    end
+            CDT_ResizeFrame(); CDT_Redraw()
+        end
+        CDT_CFG_UpdateButtons()
+    end)
+    CDT_CFG_SUMM_ROWS_EB = rowEb
 
-    local descBar = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    descBar:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -117)
-    descBar:SetTextColor(0.45, 0.45, 0.55); descBar:SetWidth(198)
-    descBar:SetJustifyH("LEFT"); descBar:SetText("H: horizontal strip  V: vertical strip")
+    local colLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colLbl:SetPoint("TOPLEFT", f, "TOPLEFT", 104, -148)
+    colLbl:SetTextColor(0.7, 0.7, 0.9); colLbl:SetText("Cols")
+    local colEb = CreateFrame("EditBox", "CDTSummColsEB", f, "InputBoxTemplate")
+    colEb:SetWidth(34); colEb:SetHeight(16)
+    colEb:SetPoint("TOPLEFT", f, "TOPLEFT", 142, -149)
+    colEb:SetAutoFocus(false)
+    colEb:SetNumeric(true)
+    colEb:SetMaxLetters(2)
+    colEb:SetScript("OnEscapePressed", function() colEb:ClearFocus(); CDT_CFG_UpdateButtons() end)
+    colEb:SetScript("OnEnterPressed", function()
+        local v = tonumber(colEb:GetText()) or 5
+        if v < CDT_SUMM_MIN_COLS then v = CDT_SUMM_MIN_COLS end
+        if v > CDT_SUMM_MAX_COLS then v = CDT_SUMM_MAX_COLS end
+        CDT_DB.summCols = v
+        colEb:ClearFocus()
+        CDT_LAST_H = -1; CDT_LAST_W = -1
+        CDT_CFG_UpdateButtons(); CDT_ResizeFrame(); CDT_Redraw()
+    end)
+    colEb:SetScript("OnEditFocusLost", function()
+        local v = tonumber(colEb:GetText())
+        if v then
+            if v < CDT_SUMM_MIN_COLS then v = CDT_SUMM_MIN_COLS end
+            if v > CDT_SUMM_MAX_COLS then v = CDT_SUMM_MAX_COLS end
+            CDT_DB.summCols = v
+            CDT_LAST_H = -1; CDT_LAST_W = -1
+            CDT_ResizeFrame(); CDT_Redraw()
+        end
+        CDT_CFG_UpdateButtons()
+    end)
+    CDT_CFG_SUMM_COLS_EB = colEb
+
+    local gridDesc = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    gridDesc:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -161)
+    gridDesc:SetTextColor(0.45, 0.45, 0.55); gridDesc:SetWidth(194)
+    gridDesc:SetJustifyH("LEFT"); gridDesc:SetText("Set fixed rows/cols. Overflow spells are hidden.")
 
     -- ── Summary grid layout ──
     MakeDivider(-129)
@@ -1290,25 +1311,6 @@ function CDT_CFG_UpdateButtons()
             else
                 btn.bg:SetTexture(0.15, 0.15, 0.3, 0.9)
                 btn.txt:SetTextColor(0.65, 0.65, 0.65)
-            end
-        end
-    end
-
-    local barOpts = CDT_BAR_OPTS
-    local curBar  = CDT_DB.barDir
-    local isMO    = (curShow == "mouseover")
-    for idx = 1, _getn(barOpts) do
-        local btn = CDT_CFG_BAR_BTNS[idx]
-        if btn then
-            if isMO and curBar == barOpts[idx] then
-                btn.bg:SetTexture(0.15, 0.45, 0.15, 0.95)
-                btn.txt:SetTextColor(0.3, 1, 0.3)
-            elseif isMO then
-                btn.bg:SetTexture(0.15, 0.15, 0.3, 0.9)
-                btn.txt:SetTextColor(0.65, 0.65, 0.65)
-            else
-                btn.bg:SetTexture(0.08, 0.08, 0.08, 0.5)
-                btn.txt:SetTextColor(0.25, 0.25, 0.25)
             end
         end
     end
