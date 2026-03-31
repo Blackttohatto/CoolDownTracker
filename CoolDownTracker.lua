@@ -904,6 +904,17 @@ function CDT_Build()
         iconStripe:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", 0, 0)
         iconStripe:SetTexture(def.cr, def.cg, def.cb, 0.9)
 
+        do
+            local captureIdx = si
+            iconFrame:EnableMouse(true)
+            iconFrame:SetScript("OnEnter", function()
+                CDT_SummTT_Show(iconFrame, captureIdx)
+            end)
+            iconFrame:SetScript("OnLeave", function()
+                CDT_SummTT_Hide()
+            end)
+        end
+
         iconFrame:Hide()
 
         local nmFs = {}
@@ -1421,7 +1432,9 @@ SlashCmdList["CDTRACKER"] = function(msg)
         if CDT_CFG_FRAME:IsVisible() then CDT_CFG_FRAME:Hide()
         else CDT_CFG_UpdateButtons(); CDT_CFG_FRAME:Show() end
     elseif msg == "test" then
-        CDT_AddEntry("Thrall",    1161,  nil)
+        CDT_AddEntry("Varok",     1161,  nil)
+        CDT_AddEntry("Garrosh",   1161,  nil)
+        CDT_AddEntry("Baine",     1161,  nil)
         CDT_AddEntry("Cairne",    5209,  nil)
         CDT_AddEntry("Tyrande",   29166, nil)
         CDT_AddEntry("Malfurion", 20484, nil)
@@ -1431,9 +1444,9 @@ SlashCmdList["CDTRACKER"] = function(msg)
         CDT_AddEntry("Uther",     19752, nil)
         CDT_AddEntry("Anduin",    6346,  nil)
         CDT_AddEntry("Hamuul",    9863,  nil)
-        CDT_AddEntry("Garrosh",   676,   nil)
+        CDT_AddEntry("Saurfang",  676,   nil)
         CDT_Redraw()
-        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Test entries added.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r Test entries added (incl. 3x C.Shout).")
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cffaabbff[CDT]|r CoolDown Tracker commands:")
         DEFAULT_CHAT_FRAME:AddMessage("  /cdt          - toggle show/hide")
