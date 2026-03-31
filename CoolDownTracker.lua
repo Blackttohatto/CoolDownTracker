@@ -5,14 +5,17 @@ local _GetTime = GetTime
 local _floor = math.floor
 local _mod = math.mod
 local _getn = table.getn
+local _sub = string.sub
+
+local CDT_Clear
 
 local CDT_HDR_H = 16
-local CDT_PAD = 4
-local CDT_COL_W = 72
-local CDT_ICON_SZ = 24
-local CDT_SLOT_H = 60
-local CDT_GAP_X = 4
-local CDT_GAP_Y = 4
+local CDT_PAD = 1
+local CDT_COL_W = 40
+local CDT_ICON_SZ = 14
+local CDT_SLOT_H = 30
+local CDT_GAP_X = 1
+local CDT_GAP_Y = 1
 
 local PC_HDR_H = 14
 local PC_ROW_H = 14
@@ -63,9 +66,11 @@ CDT_DB = CDT_DB or nil
 CDT_FRAME = nil
 CDT_BODY = nil
 CDT_CFG = nil
+CDT_CLEAR_CONFIRM = nil
 CDT_SLOTS = {}
 CDT_BY_KEY = {}
 CDT_GUID_TO_NAME = {}
+CDT_CFG_SPELL_BTNS = {}
 
 PC_FRAME = nil
 PC_HEADER_TXT = nil
@@ -138,6 +143,11 @@ local function Sec(rem)
     local s = _floor(_mod(rem, 60))
     if s < 10 then return m .. ":0" .. s end
     return m .. ":" .. s
+end
+
+local function Short6(txt)
+    if not txt then return "" end
+    return _sub(txt, 1, 6)
 end
 
 local function CDT_AddEntry(casterName, spellId, targetName)
@@ -272,10 +282,10 @@ local function CDT_Redraw()
 
             for j = 1, _getn(list) do
                 local e = list[j]
-                if e.ready then ready[_getn(ready) + 1] = e.displayName
+                if e.ready then ready[_getn(ready) + 1] = Short6(e.displayName)
                 elseif (not soonest) or e.expireAt < soonest then
                     soonest = e.expireAt
-                    soonestName = e.displayName
+                    soonestName = Short6(e.displayName)
                 end
             end
 
@@ -290,28 +300,23 @@ local function CDT_Redraw()
             if _getn(ready) > 0 then
                 slot.text[1]:SetText(ready[1] or "")
                 slot.text[2]:SetText(ready[2] or "")
-                local extra = _getn(ready) - 2
-                if extra > 0 then slot.text[3]:SetText("+" .. extra .. " ready")
-                else slot.text[3]:SetText(def.label) end
                 slot.text[1]:SetTextColor(0.2, 1, 0.2)
                 slot.text[2]:SetTextColor(0.2, 1, 0.2)
-                slot.text[3]:SetTextColor(0.8, 0.95, 0.8)
+                slot.text[3]:SetText("")
             elseif soonest then
                 local rem = soonest - now
                 if rem < 0 then rem = 0 end
                 slot.text[1]:SetText(soonestName)
                 slot.text[2]:SetText(Sec(rem))
-                slot.text[3]:SetText(def.label)
                 slot.text[1]:SetTextColor(1, 0.85, 0.55)
                 slot.text[2]:SetTextColor(1, 0.35, 0.2)
-                slot.text[3]:SetTextColor(def.cr, def.cg, def.cb)
+                slot.text[3]:SetText("")
             else
                 slot.text[1]:SetText("---")
-                slot.text[2]:SetText("No casts")
-                slot.text[3]:SetText(def.label)
+                slot.text[2]:SetText("--")
                 slot.text[1]:SetTextColor(0.5, 0.5, 0.5)
                 slot.text[2]:SetTextColor(0.45, 0.45, 0.45)
-                slot.text[3]:SetTextColor(def.cr, def.cg, def.cb)
+                slot.text[3]:SetText("")
             end
         else
             slot:Hide()
@@ -374,9 +379,10 @@ local function PC_OnCombatEnd()
 end
 
 local function CDT_BuildConfig()
+    local spellCount = _getn(CDT_SPELL_DEFS)
     local f = CreateFrame("Frame", "CDTConfigFrame", UIParent)
     f:SetWidth(220)
-    f:SetHeight(130)
+    f:SetHeight(120 + spellCount * 14)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     f:SetFrameStrata("DIALOG")
     f:EnableMouse(true)
@@ -427,6 +433,43 @@ local function CDT_BuildConfig()
     local rowsEB = MakeInput("Rows", -56, CDT_DB.rows)
     local manaEB = MakeInput("Pull mana %", -78, CDT_DB.manaThresh)
 
+    local spellTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    spellTitle:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -98)
+    spellTitle:SetText("Tracked spells")
+
+    for i = 1, spellCount do
+        local def = CDT_SPELL_DEFS[i]
+        local y = -98 - i * 14
+        local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 12, y)
+        lbl:SetWidth(128)
+        lbl:SetJustifyH("LEFT")
+        lbl:SetText(def.label)
+
+        local btn = CreateFrame("Button", nil, f)
+        btn:SetWidth(34); btn:SetHeight(12)
+        btn:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints(btn)
+        btn.txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.txt:SetAllPoints(btn)
+        btn.key = def.key
+        btn:SetScript("OnClick", function()
+            CDT_DB.spells[btn.key] = not CDT_DB.spells[btn.key]
+            if CDT_DB.spells[btn.key] then
+                btn.bg:SetTexture(0.12, 0.35, 0.12, 0.95)
+                btn.txt:SetText("on")
+                btn.txt:SetTextColor(0.35, 1, 0.35)
+            else
+                btn.bg:SetTexture(0.3, 0.12, 0.12, 0.95)
+                btn.txt:SetText("off")
+                btn.txt:SetTextColor(1, 0.45, 0.45)
+            end
+            CDT_Redraw()
+        end)
+        CDT_CFG_SPELL_BTNS[i] = btn
+    end
+
     local apply = CreateFrame("Button", nil, f)
     apply:SetWidth(60); apply:SetHeight(16)
     apply:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 10)
@@ -451,6 +494,24 @@ local function CDT_BuildConfig()
     local ct = close:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     ct:SetAllPoints(close); ct:SetText("Close")
     close:SetScript("OnClick", function() f:Hide() end)
+
+    f:SetScript("OnShow", function()
+        colsEB:SetText(tostring(CDT_DB.cols))
+        rowsEB:SetText(tostring(CDT_DB.rows))
+        manaEB:SetText(tostring(CDT_DB.manaThresh))
+        for i = 1, _getn(CDT_CFG_SPELL_BTNS) do
+            local btn = CDT_CFG_SPELL_BTNS[i]
+            if CDT_DB.spells[btn.key] then
+                btn.bg:SetTexture(0.12, 0.35, 0.12, 0.95)
+                btn.txt:SetText("on")
+                btn.txt:SetTextColor(0.35, 1, 0.35)
+            else
+                btn.bg:SetTexture(0.3, 0.12, 0.12, 0.95)
+                btn.txt:SetText("off")
+                btn.txt:SetTextColor(1, 0.45, 0.45)
+            end
+        end
+    end)
 
     CDT_CFG = f
 end
@@ -481,7 +542,15 @@ local function CDT_BuildMain()
 
     local title = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("LEFT", hdr, "LEFT", 5, 0)
-    title:SetText("|cffaabbffCDT|r Summary")
+    title:SetText("|cffaabbff[CDT]|r CoolDownTracker")
+
+    local clr = CreateFrame("Button", nil, hdr)
+    clr:SetWidth(28); clr:SetHeight(12)
+    clr:SetPoint("TOPRIGHT", hdr, "TOPRIGHT", -32, -2)
+    local clbg = clr:CreateTexture(nil, "BACKGROUND")
+    clbg:SetAllPoints(clr); clbg:SetTexture(0.35, 0.1, 0.1, 0.95)
+    local clt = clr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    clt:SetAllPoints(clr); clt:SetText("CLR")
 
     local cfg = CreateFrame("Button", nil, hdr)
     cfg:SetWidth(28); cfg:SetHeight(12)
@@ -492,6 +561,51 @@ local function CDT_BuildMain()
     cfs:SetAllPoints(cfg); cfs:SetText("CFG")
     cfg:SetScript("OnClick", function()
         if CDT_CFG:IsVisible() then CDT_CFG:Hide() else CDT_CFG:Show() end
+    end)
+
+    CDT_CLEAR_CONFIRM = CreateFrame("Frame", "CDTClearConfirm", UIParent)
+    CDT_CLEAR_CONFIRM:SetWidth(130)
+    CDT_CLEAR_CONFIRM:SetHeight(44)
+    CDT_CLEAR_CONFIRM:SetFrameStrata("DIALOG")
+    CDT_CLEAR_CONFIRM:Hide()
+
+    local cfb = CDT_CLEAR_CONFIRM:CreateTexture(nil, "BACKGROUND")
+    cfb:SetAllPoints(CDT_CLEAR_CONFIRM)
+    cfb:SetTexture(0.08, 0.04, 0.04, 0.97)
+
+    local cfl = CDT_CLEAR_CONFIRM:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cfl:SetPoint("TOP", CDT_CLEAR_CONFIRM, "TOP", 0, -7)
+    cfl:SetText("Clear all data?")
+
+    local yes = CreateFrame("Button", nil, CDT_CLEAR_CONFIRM)
+    yes:SetWidth(40); yes:SetHeight(14)
+    yes:SetPoint("BOTTOMLEFT", CDT_CLEAR_CONFIRM, "BOTTOMLEFT", 8, 6)
+    local yb = yes:CreateTexture(nil, "BACKGROUND")
+    yb:SetAllPoints(yes); yb:SetTexture(0.1, 0.4, 0.1, 0.95)
+    local yt = yes:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    yt:SetAllPoints(yes); yt:SetText("Yes")
+    yes:SetScript("OnClick", function()
+        CDT_Clear()
+        CDT_CLEAR_CONFIRM:Hide()
+    end)
+
+    local no = CreateFrame("Button", nil, CDT_CLEAR_CONFIRM)
+    no:SetWidth(40); no:SetHeight(14)
+    no:SetPoint("BOTTOMRIGHT", CDT_CLEAR_CONFIRM, "BOTTOMRIGHT", -8, 6)
+    local nb = no:CreateTexture(nil, "BACKGROUND")
+    nb:SetAllPoints(no); nb:SetTexture(0.3, 0.1, 0.1, 0.95)
+    local nt = no:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nt:SetAllPoints(no); nt:SetText("No")
+    no:SetScript("OnClick", function() CDT_CLEAR_CONFIRM:Hide() end)
+
+    clr:SetScript("OnClick", function()
+        if CDT_CLEAR_CONFIRM:IsVisible() then
+            CDT_CLEAR_CONFIRM:Hide()
+        else
+            CDT_CLEAR_CONFIRM:ClearAllPoints()
+            CDT_CLEAR_CONFIRM:SetPoint("TOP", CDT_FRAME, "BOTTOM", 0, -2)
+            CDT_CLEAR_CONFIRM:Show()
+        end
     end)
 
     CDT_BODY = CreateFrame("Frame", nil, CDT_FRAME)
@@ -610,7 +724,7 @@ ev:SetScript("OnEvent", function()
     end
 end)
 
-local function CDT_Clear()
+function CDT_Clear()
     for i = 1, _getn(CDT_SPELL_DEFS) do
         local list = CDT_BY_KEY[CDT_SPELL_DEFS[i].key]
         for j = _getn(list), 1, -1 do list[j] = nil end
